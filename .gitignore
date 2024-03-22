@@ -1,0 +1,18 @@
+# All vim files
+*~
+*.swp
+*.swo
+*.swn
+# All node modules
+node_modules
+
+# JSON lock file
+package-lock.json
+
+# We don't need these junk files
+.DS_Store
+
+# We don't track yarn locks
+yarn.lock
+yarn-error.log
+node_modules
