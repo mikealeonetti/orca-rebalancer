@@ -35,3 +35,5 @@ export const GAS_TO_SAVE = Number( process.env.GAS_TO_SAVE ) || 0.01;
 export const MINIMUM_AMOUNT_TO_DEPOSIT_DOLLARS = Number( process.env.MINIMUM_AMOUNT_TO_DEPOSIT_DOLLARS ) || 5;
 
 export const IS_DEBUG_MODE: Boolean = process.env.IS_DEBUG_MODE != null && toLower(process.env.IS_DEBUG_MODE) == "true" || false;
+
+export const OPEN_POSITION_FEE = Number( process.env.OPEN_POSITION_FEE ) || 0.015;

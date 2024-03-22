@@ -13,24 +13,29 @@ const debug = Debug( "engine" );
 export default async function (): Promise<void> {
     // The main async event loop
     while (true) {
-        debug( "minute executed" );
-        // Get all open positions
-        let openPositions = await getPositions();
+        try {
+            debug( "minute executed" );
+            // Get all open positions
+            let openPositions = await getPositions();
 
-        // Cross check the database
-        await resyncDatabasePositions(openPositions);
+            // Cross check the database
+            await resyncDatabasePositions(openPositions);
 
-        // Close any positions out of range
-        openPositions = await closeOutOfRangePositions( openPositions );
+            // Close any positions out of range
+            openPositions = await closeOutOfRangePositions( openPositions );
 
-        //debug( "New open positions=", openPositions );
+            //debug( "New open positions=", openPositions );
 
-        // Do we have no more positions open?
-        if( isEmpty(openPositions) ) {
-            logger.info( "No positions open. Attempting to open another one." );
+            // Do we have no more positions open?
+            if( isEmpty(openPositions) ) {
+                logger.info( "No positions open. Attempting to open another one." );
 
-            await openPosition();
-        }
+                await openPosition();
+            }
+       }
+       catch( e ) {
+        logger.error( "Error running minute." , e);
+       }
 
         // 1 minute
         await Bluebird.delay(60*1000);

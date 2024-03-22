@@ -31,8 +31,7 @@ async function main() {
     logger.info("getBalance USDC=%s", await getTokenBalance(USDC.mint));
 
     /*
-    // Init the DB
-    await initializeDatabase();
+
 
     const positions = await getPositions();
 
@@ -42,6 +41,9 @@ async function main() {
 
     return;
     */
+
+    // Init the DB
+    await initializeDatabase();
 
     // Run the engine
     await engine();

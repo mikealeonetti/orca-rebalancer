@@ -30,8 +30,8 @@ async function handlePosition(position: WhirlpoolPositionInfo): Promise<boolean>
     const isOutOfRange = tickCurrentIndex < tickLowerIndex || tickCurrentIndex >= tickUpperIndex;
     //const isOutOfRange = true;
 
-    debug( "pool [%s] tickCurrentIndex=%s, tickLowerIndex=%s, tickUpperIndex=%s, isOutOfRange=%s",
-     positionPublicKey, tickCurrentIndex, tickLowerIndex, tickUpperIndex, isOutOfRange );
+    debug( "pool [%s] price=%s, tickCurrentIndex=%s, tickLowerIndex=%s, tickUpperIndex=%s, isOutOfRange=%s",
+     positionPublicKey, position.price, tickCurrentIndex, tickLowerIndex, tickUpperIndex, isOutOfRange );
 
     // Are we keeping the position
     let keepPosition = true;

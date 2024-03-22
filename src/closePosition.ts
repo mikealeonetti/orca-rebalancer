@@ -5,7 +5,7 @@ import { client, ctx } from "./solana";
 import { DecimalUtil, EMPTY_INSTRUCTION, Instruction, TransactionBuilder, resolveOrCreateATA } from "@orca-so/common-sdk";
 import { PublicKey } from "@solana/web3.js";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
-import {  TAKE_PROFIT_PERCENT, WITHDRAW_SLIPPAGE } from "./constants";
+import {  OPEN_POSITION_FEE, SOLANA, TAKE_PROFIT_PERCENT, WITHDRAW_SLIPPAGE } from "./constants";
 import Debug from 'debug';
 import logger from "./logger";
 import Decimal from "decimal.js";
@@ -211,10 +211,21 @@ export default async function (position: WhirlpoolPositionInfo, dbWhirlpool: DBW
         }
 
         // The profits
-        const profitA = position.fees.tokenA.times(TAKE_PROFIT_PERCENT.toDecimal());
-        const profitB = position.fees.tokenB.times(TAKE_PROFIT_PERCENT.toDecimal());
+        let profitA = position.fees.tokenA.times(TAKE_PROFIT_PERCENT.toDecimal());
+        let profitB = position.fees.tokenB.times(TAKE_PROFIT_PERCENT.toDecimal());
 
-        debug( "profitA=%s, profitB=%s", profitA, profitB );
+        debug( "before profitA=%s, profitB=%s", profitA, profitB );
+
+        // Quick array for processing
+        const tokenAandB = [ position.tokenA, position.tokenB ];
+
+        // Make sure to cover your losses
+        [ profitA, profitB ] = [ profitA, profitB ].map( ( profit, index )=>
+            // Adjust for the amount of money we got swindled for opening up the position
+            tokenAandB[ index ].mint.equals(SOLANA.mint) ? Decimal.max( 0, profit.minus( OPEN_POSITION_FEE ) ) : profit
+        );
+
+        debug( "after profitA=%s, profitB=%s", profitA, profitB );
 
         // Add the rewards to our holdings
         await incrementTokenHoldings(profitA, position.tokenA);

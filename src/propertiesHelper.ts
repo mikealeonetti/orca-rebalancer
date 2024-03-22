@@ -22,6 +22,10 @@ export async function getTokenHoldings( token : TokenInfo ) : Promise<Decimal> {
 }
 
 export async function incrementTokenHoldings( value : Decimal, token : TokenInfo ) : Promise<void> {
+    // Makes no sense to increment
+    if( value.lte(0) )
+        return;
+
     // The key
     const key = tokenToKey( token );
 
