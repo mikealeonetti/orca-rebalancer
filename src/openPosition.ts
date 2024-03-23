@@ -1,17 +1,17 @@
 import { DecimalUtil } from "@orca-so/common-sdk";
-import { IGNORE_CACHE, ORCA_WHIRLPOOL_PROGRAM_ID, PDAUtil, PriceMath, TickUtil, TokenInfo, Whirlpool, increaseLiquidityQuoteByInputTokenUsingPriceSlippage, swapQuoteByInputToken } from "@orca-so/whirlpools-sdk";
+import { IGNORE_CACHE, ORCA_WHIRLPOOL_PROGRAM_ID, PDAUtil, PriceMath, TickUtil, TokenInfo, increaseLiquidityQuoteByInputTokenUsingPriceSlippage, swapQuoteByInputToken } from "@orca-so/whirlpools-sdk";
+import { PublicKey } from "@solana/web3.js";
 import Debug from 'debug';
 import Decimal from "decimal.js";
+import { round } from "lodash";
 import { DEPOSIT_SLIPPAGE, GAS_TO_SAVE, RANGE_PERCENT, SOLANA, SWAP_SLIPPAGE, USDC, WANTED_TICK_SPACING, WHIRLPOOLS_CONFIG } from "./constants";
 import { DBWhirlpool, DBWhirlpoolHistory } from "./database";
 import { WhirlpoolPositionInfo } from "./getPositions";
 import getTokenBalance from "./getTokenBalance";
 import { heliusAddPriorityFeeToTxBuilder } from "./heliusPriority";
 import logger from "./logger";
+import { getTokenHoldings } from "./propertiesHelper";
 import { client, ctx } from "./solana";
-import Bluebird from "bluebird";
-import { round } from "lodash";
-import { PublicKey } from "@solana/web3.js";
 
 const debug = Debug("openPosition");
 
@@ -19,27 +19,35 @@ async function getSpendableAmounts(token_a: TokenInfo, token_b: TokenInfo): Prom
     return await Promise.all([token_a, token_b].map(async (token: TokenInfo): Promise<Decimal> => {
         const isSolana = token.mint.equals(SOLANA.mint);
 
+        // The amount
+        let spendableAmount : Decimal;
+
         if (isSolana) {
             const solInWallet = await ctx.connection.getBalance(ctx.wallet.publicKey);
 
             // Convert to decimal
-            let spendableAmount = DecimalUtil.fromNumber(solInWallet, SOLANA.decimals);
+            spendableAmount = DecimalUtil.fromNumber(solInWallet, SOLANA.decimals);
 
             debug("Solana spendable before %s, solinWallet=%s", spendableAmount, solInWallet);
 
             // Remove the amount we need for gas
             spendableAmount = spendableAmount.minus(GAS_TO_SAVE);
-
-            return spendableAmount;
         }
         else {
             // Get the balance of the other token
-            const balance = await getTokenBalance(token.mint);
+            spendableAmount = await getTokenBalance(token.mint);
 
-            debug("USDC spendable before %s", balance);
-
-            return balance;
+            debug("USDC spendable before %s", spendableAmount);
         }
+
+        // Adjust with holdings
+        const holdings = await getTokenHoldings(token);
+
+        // Subtract it
+        spendableAmount = spendableAmount.minus( holdings );
+
+        // But we can't have deficits here.
+        return Decimal.max( 0, spendableAmount );
     })) as [Decimal, Decimal];
 }
 
@@ -78,6 +86,12 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
         let lower_tick_index: number;
         let upper_tick_index: number;
 
+        // Get the current price of the pool
+        let sqrt_price_x64 = whirlpool.getData().sqrtPrice;
+        let price = PriceMath.sqrtPriceX64ToPrice(sqrt_price_x64, SOLANA.decimals, USDC.decimals);
+
+        debug("price:", price.toFixed(USDC.decimals));
+
         // Do we have a previous position?
         if (hasPreviousPosition) {
             lower_tick_index = position.position.tickLowerIndex;
@@ -86,12 +100,6 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
             logger.info("Increasing position.");
         }
         else {
-            // Get the current price of the pool
-            let sqrt_price_x64 = whirlpool.getData().sqrtPrice;
-            let price = PriceMath.sqrtPriceX64ToPrice(sqrt_price_x64, SOLANA.decimals, USDC.decimals);
-
-            debug("price:", price.toFixed(USDC.decimals));
-
             const { tickCurrentIndex } = whirlpool.getData();
 
             // Get percent above and below
@@ -162,13 +170,25 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
         const estMaxA = DecimalUtil.fromBN(increaseLiquidityQuote.tokenMaxA, token_a.decimals);
         const estMaxB = DecimalUtil.fromBN(increaseLiquidityQuote.tokenMaxB, token_b.decimals);
 
+        // Get the total price of what the estimated would be
+        const estMaxATimesPrice = estMaxA.times(price);
+        const totalPriceOfAandB = estMaxATimesPrice.plus(estMaxB);
+
+        // Get what percent of the price is A
+        const theTotalPercentOfA = estMaxATimesPrice.div( totalPriceOfAandB );
+
         // Get the price with the shift
-        const estimatedRatioPriceForPool = estMaxB.div(estMaxA);
-        const ratioBPerA = estMaxA.div(estMaxB);
+        //const estimatedRatioPriceForPool = estMaxB.div(estMaxA);
+        //const ratioBPerA = estMaxA.div(estMaxB);
+
+        debug( "estMaxATimesPrice=%s\n totalPriceOfAandB=%s, theTotalPercentOfA=%s", estMaxATimesPrice, totalPriceOfAandB, theTotalPercentOfA );
 
         // Get the total estimated
-        const changedTotalPrice = spendableAmounts[0].times(estimatedRatioPriceForPool).plus(spendableAmounts[1]);
-        const percentOfB = estInputB.div(estInputA.times(estimatedRatioPriceForPool).plus(estInputB));
+        const totalPriceSpendable = spendableAmounts[0].times(price).plus(spendableAmounts[1]);
+        //const changedTotalPrice = spendableAmounts[0].times(estimatedRatioPriceForPool).plus(spendableAmounts[1]);
+        //const percentOfB = estInputB.div(estInputA.times(estimatedRatioPriceForPool).plus(estInputB));
+
+        debug( "totalPriceSpendable=%s", totalPriceSpendable );
 
         /*
         sqrt_price_x64 = ( await whirlpool.refreshData() ).sqrtPrice;
@@ -178,19 +198,18 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
         */
 
         // Now apply the ratio
-        const amountOfB = changedTotalPrice.times(percentOfB);
-        const amountOfA = changedTotalPrice.minus(amountOfB).div(estimatedRatioPriceForPool);
+        const amountOfAOfPrice = totalPriceSpendable.times(theTotalPercentOfA);
+        const amountOfA = amountOfAOfPrice.div(price);
+        const amountOfB = totalPriceSpendable.minus(amountOfAOfPrice);
+
+        debug( "amountOfAOfPrice=%s", amountOfAOfPrice );
 
         // How much more they want
         const percentForMaximum = estMaxB.minus(estInputB).div(estInputB).plus(1);
 
-        debug("ratioAPerB=%s\n ratioBPerA=%s\n changedTotalPrice=%s\n amountOfA=%s\n amountOfB=%s\n percentOfB=%s\b percentForMaximum=%s\n spendableA=%s\n spendableB=%s.",
-            estimatedRatioPriceForPool,
-            ratioBPerA,
-            changedTotalPrice,
+        debug("amountOfA=%s\n amountOfB=%s\n percentForMaximum=%s\n spendableA=%s\n spendableB=%s.",
             amountOfA,
             amountOfB,
-            percentOfB,
             percentForMaximum,
             spendableAmounts[0],
             spendableAmounts[1],
@@ -215,12 +234,12 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
 
         // Do we have enough of one token or the other?
         if (amountNeededOfA.gt(0)) {
-            amountToSwapOut = amountNeededOfA.times(estimatedRatioPriceForPool);
+            amountToSwapOut = amountNeededOfA.times(price);
             tokenToSwapFrom = token_b;
             tokenToQuote = token_a;
         }
         else if (amountNeededOfB.gt(0)) {
-            amountToSwapOut = amountNeededOfB.div(estimatedRatioPriceForPool);
+            amountToSwapOut = amountNeededOfB.div(price);
             tokenToSwapFrom = token_a;
             tokenToQuote = token_b;
         }
@@ -276,7 +295,7 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
             else if (amountNeededOfB.gt(0)) {
                 // We swapped from SOL
                 amountToIncrease = spendableAmounts[1];
-                swapFee = DecimalUtil.fromBN(swapQuote.estimatedFeeAmount, token_a.decimals).times(estimatedRatioPriceForPool);
+                swapFee = DecimalUtil.fromBN(swapQuote.estimatedFeeAmount, token_a.decimals).times(price);
             }
 
         }
