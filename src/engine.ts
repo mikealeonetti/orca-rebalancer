@@ -18,6 +18,8 @@ export default async function (): Promise<void> {
             // Get all open positions
             let openPositions = await getPositions();
 
+            debug( "openPositions=", openPositions );
+
             // Cross check the database
             await resyncDatabasePositions(openPositions);
 

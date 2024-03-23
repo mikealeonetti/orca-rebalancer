@@ -1,5 +1,5 @@
 import { DecimalUtil } from "@orca-so/common-sdk";
-import { IGNORE_CACHE, ORCA_WHIRLPOOL_PROGRAM_ID, PDAUtil, PriceMath, TickUtil, TokenInfo, increaseLiquidityQuoteByInputTokenUsingPriceSlippage, swapQuoteByInputToken } from "@orca-so/whirlpools-sdk";
+import { IGNORE_CACHE, ORCA_WHIRLPOOL_PROGRAM_ID, PDAUtil, PriceMath, TickUtil, TokenInfo, Whirlpool, increaseLiquidityQuoteByInputTokenUsingPriceSlippage, swapQuoteByInputToken } from "@orca-so/whirlpools-sdk";
 import Debug from 'debug';
 import Decimal from "decimal.js";
 import { DEPOSIT_SLIPPAGE, GAS_TO_SAVE, RANGE_PERCENT, SOLANA, SWAP_SLIPPAGE, USDC, WANTED_TICK_SPACING, WHIRLPOOLS_CONFIG } from "./constants";
@@ -11,6 +11,7 @@ import logger from "./logger";
 import { client, ctx } from "./solana";
 import Bluebird from "bluebird";
 import { round } from "lodash";
+import { PublicKey } from "@solana/web3.js";
 
 const debug = Debug("openPosition");
 
@@ -24,7 +25,7 @@ async function getSpendableAmounts(token_a: TokenInfo, token_b: TokenInfo): Prom
             // Convert to decimal
             let spendableAmount = DecimalUtil.fromNumber(solInWallet, SOLANA.decimals);
 
-            debug( "Solana spendable before %s, solinWallet=%s", spendableAmount, solInWallet );
+            debug("Solana spendable before %s, solinWallet=%s", spendableAmount, solInWallet);
 
             // Remove the amount we need for gas
             spendableAmount = spendableAmount.minus(GAS_TO_SAVE);
@@ -35,7 +36,7 @@ async function getSpendableAmounts(token_a: TokenInfo, token_b: TokenInfo): Prom
             // Get the balance of the other token
             const balance = await getTokenBalance(token.mint);
 
-            debug( "USDC spendable before %s", balance );
+            debug("USDC spendable before %s", balance);
 
             return balance;
         }
@@ -44,49 +45,28 @@ async function getSpendableAmounts(token_a: TokenInfo, token_b: TokenInfo): Prom
 
 export default async function (position?: WhirlpoolPositionInfo): Promise<void> {
     try {
-        // Whirlpools are identified by 5 elements (Program, Config, mint address of the 1st token,
-        // mint address of the 2nd token, tick spacing), similar to the 5 column compound primary key in DB
-        const whirlpool_pubkey = PDAUtil.getWhirlpool(
-            ORCA_WHIRLPOOL_PROGRAM_ID,
-            WHIRLPOOLS_CONFIG,
-            SOLANA.mint,
-            USDC.mint,
-            WANTED_TICK_SPACING).publicKey;
+        const hasPreviousPosition = position != null;
+        let whirlpool_pubkey: PublicKey;
 
-        debug("whirlpool_key:", whirlpool_pubkey.toBase58());
 
-        let whirlpool = await client.getPool(whirlpool_pubkey);
+        if (hasPreviousPosition) {
+            whirlpool_pubkey = position.position.whirlpool;
+        }
+        else {
+            // Whirlpools are identified by 5 elements (Program, Config, mint address of the 1st token,
+            // mint address of the 2nd token, tick spacing), similar to the 5 column compound primary key in DB
+            whirlpool_pubkey = PDAUtil.getWhirlpool(
+                ORCA_WHIRLPOOL_PROGRAM_ID,
+                WHIRLPOOLS_CONFIG,
+                SOLANA.mint,
+                USDC.mint,
+                WANTED_TICK_SPACING).publicKey;
+        }
 
-        // Get the current price of the pool
-        let sqrt_price_x64 = whirlpool.getData().sqrtPrice;
-        let price = PriceMath.sqrtPriceX64ToPrice(sqrt_price_x64, SOLANA.decimals, USDC.decimals);
 
-        debug("price:", price.toFixed(USDC.decimals));
+        debug("whirlpool_key: %s", whirlpool_pubkey);
 
-                
-        const { tickCurrentIndex } = whirlpool.getData();
-
-        // Get percent above and below
-        /*
-        const halfPercent =  tickCurrentIndexDecimal // price
-            // Price multiplied by the range
-            .times(RANGE_PERCENT)
-            // Divided by 100
-            .div(100)
-            // Now halved
-            .div(2);
-            */
-        const halfPercent = Math.abs(tickCurrentIndex * RANGE_PERCENT / 100 / 2 );
-
-        // Set price range, amount of tokens to deposit, and acceptable slippage
-        //const lower_price = price.minus(halfPercent);
-        //const upper_price = price.plus(halfPercent);
-        const lower_tick = round( tickCurrentIndex - halfPercent );
-        const upper_tick = round( tickCurrentIndex + halfPercent );
-
-        debug( "lower_tick=%s, upper_tick=%s, halfPercent=%s, tickCurrentIndex=%s", lower_tick, upper_tick, halfPercent, tickCurrentIndex );
-
-        //const dev_usdc_amount = DecimalUtil.toBN(new Decimal("22.34" /* devUSDC */), USDC.decimals);
+        const whirlpool = await client.getPool(whirlpool_pubkey, IGNORE_CACHE);
 
         // Adjust price range (not all prices can be set, only a limited number of prices are available for range specification)
         // (prices corresponding to InitializableTickIndex are available)
@@ -94,27 +74,70 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
         const token_a = whirlpool.getTokenAInfo();
         const token_b = whirlpool.getTokenBInfo();
 
-        const lower_tick_index = TickUtil.getInitializableTickIndex(lower_tick, whirlpool_data.tickSpacing);
-        const upper_tick_index = TickUtil.getInitializableTickIndex(upper_tick, whirlpool_data.tickSpacing);
-        //const lower_tick_index = PriceMath.priceToInitializableTickIndex(lower_price, token_a.decimals, token_b.decimals, whirlpool_data.tickSpacing);
-        //const upper_tick_index = PriceMath.priceToInitializableTickIndex(upper_price, token_a.decimals, token_b.decimals, whirlpool_data.tickSpacing);
-        const lower_price = PriceMath.tickIndexToPrice(lower_tick_index, token_a.decimals, token_b.decimals);
-        const upper_price = PriceMath.tickIndexToPrice(upper_tick_index, token_a.decimals, token_b.decimals);
-        debug("lower & upper tick_index:", lower_tick_index, upper_tick_index);
-        debug("lower & upper price:",
-            PriceMath.tickIndexToPrice(lower_tick_index, token_a.decimals, token_b.decimals).toFixed(token_b.decimals),
-            PriceMath.tickIndexToPrice(upper_tick_index, token_a.decimals, token_b.decimals).toFixed(token_b.decimals)
-        );
+        // Shared variables
+        let lower_tick_index: number;
+        let upper_tick_index: number;
 
-        logger.info("Opening position at price %s, upper=%s, lower=%s", price, lower_price, upper_price);
+        // Do we have a previous position?
+        if (hasPreviousPosition) {
+            lower_tick_index = position.position.tickLowerIndex;
+            upper_tick_index = position.position.tickUpperIndex;
+
+            logger.info("Increasing position.");
+        }
+        else {
+            // Get the current price of the pool
+            let sqrt_price_x64 = whirlpool.getData().sqrtPrice;
+            let price = PriceMath.sqrtPriceX64ToPrice(sqrt_price_x64, SOLANA.decimals, USDC.decimals);
+
+            debug("price:", price.toFixed(USDC.decimals));
+
+            const { tickCurrentIndex } = whirlpool.getData();
+
+            // Get percent above and below
+            /*
+            const halfPercent =  tickCurrentIndexDecimal // price
+                // Price multiplied by the range
+                .times(RANGE_PERCENT)
+                // Divided by 100
+                .div(100)
+                // Now halved
+                .div(2);
+                */
+            const halfPercent = Math.abs(tickCurrentIndex * RANGE_PERCENT / 100 / 2);
+
+            // Set price range, amount of tokens to deposit, and acceptable slippage
+            //const lower_price = price.minus(halfPercent);
+            //const upper_price = price.plus(halfPercent);
+            const lower_tick = round(tickCurrentIndex - halfPercent);
+            const upper_tick = round(tickCurrentIndex + halfPercent);
+
+            debug("lower_tick=%s, upper_tick=%s, halfPercent=%s, tickCurrentIndex=%s", lower_tick, upper_tick, halfPercent, tickCurrentIndex);
+
+            //const dev_usdc_amount = DecimalUtil.toBN(new Decimal("22.34" /* devUSDC */), USDC.decimals);
+
+            lower_tick_index = TickUtil.getInitializableTickIndex(lower_tick, whirlpool_data.tickSpacing);
+            upper_tick_index = TickUtil.getInitializableTickIndex(upper_tick, whirlpool_data.tickSpacing);
+            //const lower_tick_index = PriceMath.priceToInitializableTickIndex(lower_price, token_a.decimals, token_b.decimals, whirlpool_data.tickSpacing);
+            //const upper_tick_index = PriceMath.priceToInitializableTickIndex(upper_price, token_a.decimals, token_b.decimals, whirlpool_data.tickSpacing);
+            const lower_price = PriceMath.tickIndexToPrice(lower_tick_index, token_a.decimals, token_b.decimals);
+            const upper_price = PriceMath.tickIndexToPrice(upper_tick_index, token_a.decimals, token_b.decimals);
+            debug("lower & upper tick_index:", lower_tick_index, upper_tick_index);
+            debug("lower & upper price:",
+                PriceMath.tickIndexToPrice(lower_tick_index, token_a.decimals, token_b.decimals).toFixed(token_b.decimals),
+                PriceMath.tickIndexToPrice(upper_tick_index, token_a.decimals, token_b.decimals).toFixed(token_b.decimals)
+            );
+
+            logger.info("Opening position at price %s, upper=%s, lower=%s", price, lower_price, upper_price);
+        }
 
         // Get the token amounts
         let spendableAmounts = await getSpendableAmounts(token_a, token_b);
 
         // Get the total price in the wallet
-        let totalPriceSpendable = spendableAmounts[0].times(price).plus(spendableAmounts[1]);
+        //let totalPriceSpendable = spendableAmounts[0].times(price).plus(spendableAmounts[1]);
 
-        debug("totalPrice that's spendable=", totalPriceSpendable);
+        //debug("totalPrice that's spendable=", totalPriceSpendable);
 
         const tokensToTest = new Decimal(100);
 
@@ -150,7 +173,7 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
         /*
         sqrt_price_x64 = ( await whirlpool.refreshData() ).sqrtPrice;
         price = PriceMath.sqrtPriceX64ToPrice(sqrt_price_x64, SOLANA.decimals, USDC.decimals);
-
+    
         totalPriceSpendable = spendableAmounts[0].times(price).plus(spendableAmounts[1]);
         */
 
@@ -159,7 +182,7 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
         const amountOfA = changedTotalPrice.minus(amountOfB).div(estimatedRatioPriceForPool);
 
         // How much more they want
-        const percentForMaximum = estMaxB.minus( estInputB ).div( estInputB ).plus( 1 );
+        const percentForMaximum = estMaxB.minus(estInputB).div(estInputB).plus(1);
 
         debug("ratioAPerB=%s\n ratioBPerA=%s\n changedTotalPrice=%s\n amountOfA=%s\n amountOfB=%s\n percentOfB=%s\b percentForMaximum=%s\n spendableA=%s\n spendableB=%s.",
             estimatedRatioPriceForPool,
@@ -180,10 +203,10 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
         debug("tokenB est input:", estInputB.toFixed(token_b.decimals));
 
         // How much more we need of each token
-        const amountNeededOfA = amountOfA.minus( spendableAmounts[0] );
-        const amountNeededOfB = amountOfB.minus( spendableAmounts[1] );
+        const amountNeededOfA = amountOfA.minus(spendableAmounts[0]);
+        const amountNeededOfB = amountOfB.minus(spendableAmounts[1]);
 
-        debug( "amountNeededOfA=%s, amountNeededOfB=%s", amountNeededOfA, amountNeededOfB );
+        debug("amountNeededOfA=%s, amountNeededOfB=%s", amountNeededOfA, amountNeededOfB);
 
         let amountToSwapOut: Decimal | null = null;
         let tokenToSwapFrom: TokenInfo | null = null;
@@ -204,7 +227,7 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
 
         debug("Want to swap %s of token [%s] to balance.", amountToSwapOut, tokenToSwapFrom?.mint, tokenToSwapFrom);
 
-        let swapFee : Decimal = new Decimal( 0 );
+        let swapFee: Decimal = new Decimal(0);
 
         if (tokenToSwapFrom != null) {
             logger.info("Swapping %s of token [%s] to balance.", amountToSwapOut, tokenToSwapFrom.mint);
@@ -222,17 +245,17 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
                 IGNORE_CACHE,
             );
 
-            debug( "estimatedAmountIn=%s", DecimalUtil.fromBN(swapQuote.estimatedAmountIn, 9 ) );
-            debug( "estimatedAmountOut=%s", DecimalUtil.fromBN(swapQuote.estimatedAmountOut, 6 ) );
+            debug("estimatedAmountIn=%s", DecimalUtil.fromBN(swapQuote.estimatedAmountIn, 9));
+            debug("estimatedAmountOut=%s", DecimalUtil.fromBN(swapQuote.estimatedAmountOut, 6));
 
-            debug( "estiamtedFeeAmount=%s", swapQuote.estimatedFeeAmount );
+            debug("estiamtedFeeAmount=%s", swapQuote.estimatedFeeAmount);
 
             // Send the transaction
             const tx = await whirlpool.swap(swapQuote);
-            
+
             // Add the priority
-            await heliusAddPriorityFeeToTxBuilder( tx );
-            
+            await heliusAddPriorityFeeToTxBuilder(tx);
+
             const signature = await tx.buildAndExecute();
             debug("signature:", signature);
 
@@ -248,25 +271,24 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
             if (amountNeededOfA.gt(0)) {
                 // We swapped from USDC
                 amountToIncrease = spendableAmounts[0];
-                swapFee = DecimalUtil.fromBN( swapQuote.estimatedFeeAmount, token_b.decimals );
+                swapFee = DecimalUtil.fromBN(swapQuote.estimatedFeeAmount, token_b.decimals);
             }
             else if (amountNeededOfB.gt(0)) {
                 // We swapped from SOL
                 amountToIncrease = spendableAmounts[1];
-                swapFee = DecimalUtil.fromBN( swapQuote.estimatedFeeAmount, token_a.decimals ).times(estimatedRatioPriceForPool);
+                swapFee = DecimalUtil.fromBN(swapQuote.estimatedFeeAmount, token_a.decimals).times(estimatedRatioPriceForPool);
             }
 
         }
 
         let adjustedAmountToIncrease = amountToIncrease.div(percentForMaximum);
 
-        debug( "adjustedAmountToIncrease=", adjustedAmountToIncrease );
+        debug("adjustedAmountToIncrease=", adjustedAmountToIncrease);
 
         // Wait a tick
         //await Bluebird.delay( 1000 );
-        
-        while( true )
-        {
+
+        while (true) {
             // Get an actual quote
             increaseLiquidityQuote = increaseLiquidityQuoteByInputTokenUsingPriceSlippage(
                 // inputTokenMint - The mint of the input token the user would like to deposit.
@@ -283,7 +305,7 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
                 whirlpool
             );
 
-            debug( "second increaseLiquidityQuote=", increaseLiquidityQuote);
+            debug("second increaseLiquidityQuote=", increaseLiquidityQuote);
 
             const newMaxA = DecimalUtil.fromBN(increaseLiquidityQuote.tokenMaxA, token_a.decimals);
             const newMaxB = DecimalUtil.fromBN(increaseLiquidityQuote.tokenMaxB, token_b.decimals);
@@ -296,24 +318,24 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
             debug("revised tokenB est input:", newEstB.toFixed(token_b.decimals));
 
             // Do we have to adjust and loop again?
-            const percentOverA = newMaxA.minus( spendableAmounts[0] ).div( spendableAmounts[0] );
-            const percentOverB = newMaxB.minus( spendableAmounts[1] ).div( spendableAmounts[1] );
+            const percentOverA = newMaxA.minus(spendableAmounts[0]).div(spendableAmounts[0]);
+            const percentOverB = newMaxB.minus(spendableAmounts[1]).div(spendableAmounts[1]);
             //const percentOverA = newEstA.minus( spendableAmounts[0] ).div( spendableAmounts[0] );
             //const percentOverB = newEstB.minus( spendableAmounts[1] ).div( spendableAmounts[1] );
 
             // Get the maximum percent over
-            const maxPercentOver = Decimal.max( percentOverA, percentOverB );
+            const maxPercentOver = Decimal.max(percentOverA, percentOverB);
 
-            debug( "percentOverA=%s\n percentOverB=%s\n maxPercentOver=%s", percentOverA, percentOverB, maxPercentOver );
+            debug("percentOverA=%s\n percentOverB=%s\n maxPercentOver=%s", percentOverA, percentOverB, maxPercentOver);
 
             // If a percent if positive then we have to re-adjust
-            if( maxPercentOver.lte(0) )
+            if (maxPercentOver.lte(0))
                 break; // Everything is good
 
             // Dial down the percent
-            adjustedAmountToIncrease = adjustedAmountToIncrease.div( maxPercentOver.plus(1) );
+            adjustedAmountToIncrease = adjustedAmountToIncrease.div(maxPercentOver.plus(1));
 
-            debug( "re-adjustedAmountToIncrease=%s", adjustedAmountToIncrease );
+            debug("re-adjustedAmountToIncrease=%s", adjustedAmountToIncrease);
         }
 
         /*
@@ -326,39 +348,81 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
            * @param whirlpool - A Whirlpool helper class to help interact with the Whirlpool account.
            * @returns An IncreaseLiquidityInput object detailing the required token amounts & liquidity values to use when calling increase-liquidity-ix.
            */
-        // Create a transaction
-        const open_position_tx = await whirlpool.openPositionWithMetadata(
-            lower_tick_index,
-            upper_tick_index,
-            increaseLiquidityQuote
-        );
 
-        // Add the priority
-        await heliusAddPriorityFeeToTxBuilder( open_position_tx.tx );
 
-        // Send the transaction
-        const signature = await open_position_tx.tx.buildAndExecute();
-        debug("signature: %s", signature);
-        debug("position NFT: %s", open_position_tx.positionMint);
+        if (hasPreviousPosition) {
+            // Refetch position
+            const positionObject = await client.getPosition(position.publicKey, IGNORE_CACHE);
 
-        // Wait for the transaction to complete
-        const latest_blockhash = await ctx.connection.getLatestBlockhash();
-        const rpcResponse = await ctx.connection.confirmTransaction({ signature, ...latest_blockhash }, "confirmed");
+            // Create a transaction
+            const increaseLiquidityTransaction = await positionObject.increaseLiquidity(increaseLiquidityQuote);
 
-        debug("rpcResponse=", rpcResponse);
+            // Add the priority
+            await heliusAddPriorityFeeToTxBuilder(increaseLiquidityTransaction);
 
-        // Get the position info
-        const position = await PDAUtil.getPosition(ctx.program.programId, open_position_tx.positionMint);
-        
-        // Save to the DB
-        await DBWhirlpool.create({
-            publicKey : position.publicKey.toString(),
-            feeUSD : swapFee.toString()
-        });
-        await DBWhirlpoolHistory.create({
-            publicKey : position.publicKey.toString(),
-            feeUSD : swapFee.toString()
-        });
+            // Send the transaction
+            const signature = await increaseLiquidityTransaction.buildAndExecute();
+
+            // Wait for the transaction to complete
+            const latest_blockhash = await ctx.connection.getLatestBlockhash();
+            const rpcResponse = await ctx.connection.confirmTransaction({ signature, ...latest_blockhash }, "confirmed");
+
+            debug("rpcResponse=", rpcResponse);
+
+            // Increase the fees
+            const updatables = (await Promise.all([
+                DBWhirlpool.findOne({ where: { publicKey: position.publicKey.toString() } }),
+                DBWhirlpoolHistory.findOne({ where: { publicKey: position.publicKey.toString() }, order: [["createdAt", "DESC"]] }),
+            ]))
+                .filter(Boolean) as (DBWhirlpool | DBWhirlpoolHistory)[];
+
+            // Update each
+            await Promise.all(updatables.map(row => {
+                // Get from the DB
+                const feeUSD = new Decimal(Number(row.feeUSD) || 0);
+
+                // Add and save
+                row.feeUSD = feeUSD.plus(swapFee).toString();
+
+                // Save it
+                return row.save();
+            }));
+        }
+        else {
+            // Create a transaction
+            const open_position_tx = await whirlpool.openPositionWithMetadata(
+                lower_tick_index,
+                upper_tick_index,
+                increaseLiquidityQuote
+            );
+
+            // Add the priority
+            await heliusAddPriorityFeeToTxBuilder(open_position_tx.tx);
+
+            // Send the transaction
+            const signature = await open_position_tx.tx.buildAndExecute();
+            debug("signature: %s", signature);
+            debug("position NFT: %s", open_position_tx.positionMint);
+
+            // Wait for the transaction to complete
+            const latest_blockhash = await ctx.connection.getLatestBlockhash();
+            const rpcResponse = await ctx.connection.confirmTransaction({ signature, ...latest_blockhash }, "confirmed");
+
+            debug("rpcResponse=", rpcResponse);
+
+            // Get the position info
+            const positionPDA = await PDAUtil.getPosition(ctx.program.programId, open_position_tx.positionMint);
+
+            // Save to the DB
+            await DBWhirlpool.create({
+                publicKey: positionPDA.publicKey.toString(),
+                feeUSD: swapFee.toString()
+            });
+            await DBWhirlpoolHistory.create({
+                publicKey: positionPDA.publicKey.toString(),
+                feeUSD: swapFee.toString()
+            });
+        }
     }
     catch (e) {
         logger.error("Error opening position", e);
