@@ -4,7 +4,8 @@ import { sequelize } from "../common";
 export class DBWhirlpool extends Model<InferAttributes<DBWhirlpool>, InferCreationAttributes<DBWhirlpool>> {
 	declare publicKey: string;
 	declare outOfRangeSince: Date | null;
-	declare feeUSD: string;
+	declare remainingSpentTokenA : string;
+	declare remainingSpentTokenB : string;
 	declare lastRewardsCollected: Date | null;
 	// createdAt can be undefined during creation
 	declare createdAt: CreationOptional<Date>;
@@ -22,7 +23,11 @@ DBWhirlpool.init({
 		type: DataTypes.DATE,
 		allowNull: true
 	},
-	feeUSD: {
+	remainingSpentTokenA: {
+		type: DataTypes.STRING,
+		allowNull: false
+	},
+	remainingSpentTokenB: {
 		type: DataTypes.STRING,
 		allowNull: false
 	},

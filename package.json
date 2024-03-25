@@ -8,7 +8,8 @@
     "create-wallet": "tsc && NODE_OPTIONS=--enable-source-maps node dist/create_wallet_json.js",
     "force-deposits": "tsc && NODE_OPTIONS=--enable-source-maps node dist/forceLiquidityDeposit.js",
     "close-positions": "tsc && NODE_OPTIONS=--enable-source-maps node dist/closeAllPositions.js",
-    "tsc" : "tsc",
+    "initdb": "tsc && NODE_OPTIONS=--enable-source-maps node dist/initializeDatabase.js",
+    "tsc": "tsc",
     "lint": "eslint . --ext .ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -45,6 +46,7 @@
     "sqlite3": "^5.1.7",
     "telegraf": "^4.16.3",
     "typescript": "^5.4.2",
+    "umzug": "^3.7.0",
     "winston": "^3.12.0"
   }
 }

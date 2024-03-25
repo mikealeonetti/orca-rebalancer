@@ -2,6 +2,8 @@ import { findIndex } from "lodash";
 import { DBWhirlpool, DBWhirlpoolHistory } from "./database";
 import { WhirlpoolPositionInfo } from "./getPositions";
 import logger from "./logger";
+import { OPEN_POSITION_FEE } from "./constants";
+import Decimal from "decimal.js";
 
 
 export default async function (positions: WhirlpoolPositionInfo[]): Promise<void> {
@@ -22,16 +24,22 @@ export default async function (positions: WhirlpoolPositionInfo[]): Promise<void
         // Report
         logger.info( "Not tracking position [%s]. Adding to the database to track.", publicKey );
 
+        const positionFeeA = new Decimal( OPEN_POSITION_FEE )
+
         // Add a new entry
         await DBWhirlpool.create( {
             publicKey,
-            feeUSD : "0" // We failed to track this
+            remainingSpentTokenA : positionFeeA.toString(),
+            remainingSpentTokenB : "0"
         } );
 
         // Add to the history
         await DBWhirlpoolHistory.create( {
             publicKey,
-            feeUSD : "0" // I'm sorry
+            enteredPriceUSDC : position.amountA.times(position.price).plus(position.amountB).toString(),
+            totalSpentTokenA : positionFeeA.toString(),
+            totalSpentTokenB : "0",
+            totalSpentUSDC : positionFeeA.times(position.price).toString()
         });
     }
 

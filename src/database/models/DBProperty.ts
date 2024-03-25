@@ -1,10 +1,14 @@
-import { DataTypes, InferAttributes, InferCreationAttributes, Model } from "sequelize";
+import { CreationOptional, DataTypes, InferAttributes, InferCreationAttributes, Model } from "sequelize";
 import { sequelize } from "../common";
 
 // order of InferAttributes & InferCreationAttributes is important.
 export class DBProperty extends Model<InferAttributes<DBProperty>, InferCreationAttributes<DBProperty>> {
 	declare key: string;
 	declare value: string;
+		// createdAt can be undefined during creation
+		declare createdAt: CreationOptional<Date>;
+		// updatedAt can be undefined during creation
+		declare updatedAt: CreationOptional<Date>;
 }
 DBProperty.init({
 	key: {
@@ -15,7 +19,9 @@ DBProperty.init({
 	value: {
 		type: DataTypes.STRING,
 		allowNull: false
-	}
+	},
+	createdAt: DataTypes.DATE,
+    updatedAt: DataTypes.DATE,
 },
 	{
 		sequelize,

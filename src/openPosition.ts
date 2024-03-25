@@ -3,15 +3,17 @@ import { IGNORE_CACHE, ORCA_WHIRLPOOL_PROGRAM_ID, PDAUtil, PriceMath, TickUtil, 
 import { PublicKey } from "@solana/web3.js";
 import Debug from 'debug';
 import Decimal from "decimal.js";
-import { round } from "lodash";
-import { DEPOSIT_SLIPPAGE, GAS_TO_SAVE, RANGE_PERCENT, SOLANA, SWAP_SLIPPAGE, USDC, WANTED_TICK_SPACING, WHIRLPOOLS_CONFIG } from "./constants";
+import { find, round } from "lodash";
+import { DEPOSIT_SLIPPAGE, GAS_TO_SAVE, OPEN_POSITION_FEE, RANGE_PERCENT, SOLANA, SWAP_SLIPPAGE, USDC, WANTED_TICK_SPACING, WHIRLPOOLS_CONFIG } from "./constants";
 import { DBWhirlpool, DBWhirlpoolHistory } from "./database";
-import { WhirlpoolPositionInfo } from "./getPositions";
+import getPositions, { WhirlpoolPositionInfo } from "./getPositions";
 import getTokenBalance from "./getTokenBalance";
 import { heliusAddPriorityFeeToTxBuilder } from "./heliusPriority";
 import logger from "./logger";
 import { getTokenHoldings } from "./propertiesHelper";
 import { client, ctx } from "./solana";
+import util from 'util';
+import { alertViaTelegram } from "./telegram";
 
 const debug = Debug("openPosition");
 
@@ -20,7 +22,7 @@ async function getSpendableAmounts(token_a: TokenInfo, token_b: TokenInfo): Prom
         const isSolana = token.mint.equals(SOLANA.mint);
 
         // The amount
-        let spendableAmount : Decimal;
+        let spendableAmount: Decimal;
 
         if (isSolana) {
             const solInWallet = await ctx.connection.getBalance(ctx.wallet.publicKey);
@@ -44,10 +46,10 @@ async function getSpendableAmounts(token_a: TokenInfo, token_b: TokenInfo): Prom
         const holdings = await getTokenHoldings(token);
 
         // Subtract it
-        spendableAmount = spendableAmount.minus( holdings );
+        spendableAmount = spendableAmount.minus(holdings);
 
         // But we can't have deficits here.
-        return Decimal.max( 0, spendableAmount );
+        return Decimal.max(0, spendableAmount);
     })) as [Decimal, Decimal];
 }
 
@@ -175,20 +177,20 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
         const totalPriceOfAandB = estMaxATimesPrice.plus(estMaxB);
 
         // Get what percent of the price is A
-        const theTotalPercentOfA = estMaxATimesPrice.div( totalPriceOfAandB );
+        const theTotalPercentOfA = estMaxATimesPrice.div(totalPriceOfAandB);
 
         // Get the price with the shift
         //const estimatedRatioPriceForPool = estMaxB.div(estMaxA);
         //const ratioBPerA = estMaxA.div(estMaxB);
 
-        debug( "estMaxATimesPrice=%s\n totalPriceOfAandB=%s, theTotalPercentOfA=%s", estMaxATimesPrice, totalPriceOfAandB, theTotalPercentOfA );
+        debug("estMaxATimesPrice=%s\n totalPriceOfAandB=%s, theTotalPercentOfA=%s", estMaxATimesPrice, totalPriceOfAandB, theTotalPercentOfA);
 
         // Get the total estimated
         const totalPriceSpendable = spendableAmounts[0].times(price).plus(spendableAmounts[1]);
         //const changedTotalPrice = spendableAmounts[0].times(estimatedRatioPriceForPool).plus(spendableAmounts[1]);
         //const percentOfB = estInputB.div(estInputA.times(estimatedRatioPriceForPool).plus(estInputB));
 
-        debug( "totalPriceSpendable=%s", totalPriceSpendable );
+        debug("totalPriceSpendable=%s", totalPriceSpendable);
 
         /*
         sqrt_price_x64 = ( await whirlpool.refreshData() ).sqrtPrice;
@@ -202,7 +204,7 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
         const amountOfA = amountOfAOfPrice.div(price);
         const amountOfB = totalPriceSpendable.minus(amountOfAOfPrice);
 
-        debug( "amountOfAOfPrice=%s", amountOfAOfPrice );
+        debug("amountOfAOfPrice=%s", amountOfAOfPrice);
 
         // How much more they want
         const percentForMaximum = estMaxB.minus(estInputB).div(estInputB).plus(1);
@@ -246,7 +248,9 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
 
         debug("Want to swap %s of token [%s] to balance.", amountToSwapOut, tokenToSwapFrom?.mint, tokenToSwapFrom);
 
-        let swapFee: Decimal = new Decimal(0);
+        let tokenAFees = new Decimal(OPEN_POSITION_FEE);
+        let tokenBFees = new Decimal(0);
+        let totalSpentUSDC: Decimal = tokenAFees.times(price).plus(tokenBFees);
 
         if (tokenToSwapFrom != null) {
             logger.info("Swapping %s of token [%s] to balance.", amountToSwapOut, tokenToSwapFrom.mint);
@@ -290,12 +294,18 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
             if (amountNeededOfA.gt(0)) {
                 // We swapped from USDC
                 amountToIncrease = spendableAmounts[0];
-                swapFee = DecimalUtil.fromBN(swapQuote.estimatedFeeAmount, token_b.decimals);
+                const spentTokenB = DecimalUtil.fromBN(swapQuote.estimatedFeeAmount, token_b.decimals);
+
+                tokenBFees = tokenBFees.plus(spentTokenB);
+                totalSpentUSDC = totalSpentUSDC.plus(spentTokenB);
             }
             else if (amountNeededOfB.gt(0)) {
                 // We swapped from SOL
                 amountToIncrease = spendableAmounts[1];
-                swapFee = DecimalUtil.fromBN(swapQuote.estimatedFeeAmount, token_a.decimals).times(price);
+
+                const spentTokenA = DecimalUtil.fromBN(swapQuote.estimatedFeeAmount, token_a.decimals);
+                tokenBFees = tokenBFees.plus(spentTokenA);
+                totalSpentUSDC = totalSpentUSDC.plus(spentTokenA.times(price));
             }
 
         }
@@ -389,23 +399,23 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
             debug("rpcResponse=", rpcResponse);
 
             // Increase the fees
-            const updatables = (await Promise.all([
-                DBWhirlpool.findOne({ where: { publicKey: position.publicKey.toString() } }),
-                DBWhirlpoolHistory.findOne({ where: { publicKey: position.publicKey.toString() }, order: [["createdAt", "DESC"]] }),
-            ]))
-                .filter(Boolean) as (DBWhirlpool | DBWhirlpoolHistory)[];
 
-            // Update each
-            await Promise.all(updatables.map(row => {
-                // Get from the DB
-                const feeUSD = new Decimal(Number(row.feeUSD) || 0);
+            const dbWhirlpool = await DBWhirlpool.findOne({ where: { publicKey: position.publicKey.toString() } });
+            const dbWhirlpoolHistory = await DBWhirlpoolHistory.findOne({ where: { publicKey: position.publicKey.toString() }, order: [["createdAt", "DESC"]] });
 
-                // Add and save
-                row.feeUSD = feeUSD.plus(swapFee).toString();
-
-                // Save it
-                return row.save();
-            }));
+            // update whirlpool
+            if (dbWhirlpool) {
+                dbWhirlpool.remainingSpentTokenA = new Decimal(dbWhirlpool.remainingSpentTokenA).plus(tokenAFees).toString();
+                dbWhirlpool.remainingSpentTokenB = new Decimal(dbWhirlpool.remainingSpentTokenB).plus(tokenBFees).toString();
+                await dbWhirlpool.save();
+            }
+            // update the history
+            if (dbWhirlpoolHistory) {
+                dbWhirlpoolHistory.totalSpentTokenA = new Decimal(dbWhirlpoolHistory.totalSpentTokenA).plus(tokenAFees).toString();
+                dbWhirlpoolHistory.totalSpentTokenB = new Decimal(dbWhirlpoolHistory.totalSpentTokenB).plus(tokenBFees).toString();
+                dbWhirlpoolHistory.totalSpentUSDC = new Decimal(dbWhirlpoolHistory.totalSpentUSDC).plus(totalSpentUSDC).toString();
+                await dbWhirlpoolHistory.save();
+            }
         }
         else {
             // Create a transaction
@@ -432,23 +442,65 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
             // Get the position info
             const positionPDA = await PDAUtil.getPosition(ctx.program.programId, open_position_tx.positionMint);
 
-            // Save to the DB
-            await DBWhirlpool.create({
-                publicKey: positionPDA.publicKey.toString(),
-                feeUSD: swapFee.toString()
-            });
-            await DBWhirlpoolHistory.create({
-                publicKey: positionPDA.publicKey.toString(),
-                feeUSD: swapFee.toString()
-            });
+            // Re-get positions
+            const newPositions = await getPositions();
+
+            // Now get the new position
+            const newPosition = newPositions.find( p=>p.publicKey.equals( positionPDA.publicKey ) );
+
+            debug("Got new position newPosition=", newPosition);
+
+            if (newPosition) {
+                    // Fee SOL in USDC
+                    const stakeAmountAPrice = newPosition.amountA.times(newPosition.price);
+                    const totalStakeValueUSDC = stakeAmountAPrice.plus(newPosition.amountB);
+
+                    // Prepare the text
+                    const text = util.format(`New Position [%s]
+
+Price: %s
+Low price: %s (%s%% from current)
+High price: %s (%s%% from current)
+
+Stake total: %s USDC
+SOL amount: %s (%s USDC, %s%%)
+USDC amount: %s (%s%%)`,
+                        newPosition.publicKey,
+
+                        newPosition.price.toFixed(4),
+                        newPosition.lowerPrice.toFixed(4), newPosition.price.minus(newPosition.lowerPrice).div(newPosition.price).times(100).toFixed(2),
+                        newPosition.upperPrice.toFixed(4), newPosition.upperPrice.minus(newPosition.price).div(newPosition.price).times(100).toFixed(2),
+
+                        totalStakeValueUSDC.toFixed(2),
+                        newPosition.amountA, stakeAmountAPrice.toFixed(2), stakeAmountAPrice.div(totalStakeValueUSDC).times(100).toFixed(2),
+                        newPosition.amountB.toFixed(2), newPosition.amountB.div(totalStakeValueUSDC).times(100).toFixed(2)
+                    );
+
+                    // Send a heartbeat
+                    await alertViaTelegram(text);
+
+                    // Save to the DB
+                    await DBWhirlpool.create({
+                        publicKey: positionPDA.publicKey.toString(),
+                        remainingSpentTokenA: tokenAFees.toString(),
+                        remainingSpentTokenB: tokenBFees.toString()
+                    });
+                    await DBWhirlpoolHistory.create({
+                        publicKey: positionPDA.publicKey.toString(),
+                        totalSpentTokenA: tokenAFees.toString(),
+                        totalSpentTokenB: tokenBFees.toString(),
+                        totalSpentUSDC: totalSpentUSDC.toString(),
+                        enteredPriceUSDC : totalStakeValueUSDC.toString()
+                    });
+                }
+            }
+        }
+    catch (e) {
+            logger.error("Error opening position", e);
+            debug("Error opening position", e);
         }
     }
-    catch (e) {
-        logger.error("Error opening position", e);
-        debug("Error opening position", e);
-    }
-}
 
 function abs(arg0: number) {
-    throw new Error("Function not implemented.");
-}
+        throw new Error("Function not implemented.");
+    }

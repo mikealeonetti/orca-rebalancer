@@ -5,17 +5,19 @@ import { client, ctx } from "./solana";
 import { DecimalUtil, EMPTY_INSTRUCTION, Instruction, TransactionBuilder, resolveOrCreateATA } from "@orca-so/common-sdk";
 import { PublicKey } from "@solana/web3.js";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
-import {  OPEN_POSITION_FEE, SOLANA, TAKE_PROFIT_PERCENT, WITHDRAW_SLIPPAGE } from "./constants";
+import { OPEN_POSITION_FEE, SOLANA, TAKE_PROFIT_PERCENT, WITHDRAW_SLIPPAGE } from "./constants";
 import Debug from 'debug';
 import logger from "./logger";
 import Decimal from "decimal.js";
 import { incrementTokenHoldings } from "./propertiesHelper";
 import { heliusAddPriorityFeeToTxBuilder } from "./heliusPriority";
+import { alertViaTelegram } from "./telegram";
+import util from 'util';
 
 const debug = Debug("closePosition");
 
 export default async function (position: WhirlpoolPositionInfo, dbWhirlpool: DBWhirlpool): Promise<boolean> {
-    debug( "closePosition", position, dbWhirlpool );
+    debug("closePosition", position, dbWhirlpool);
 
     try {
 
@@ -170,7 +172,7 @@ export default async function (position: WhirlpoolPositionInfo, dbWhirlpool: DBW
         // Create a transaction and add the instruction
         const tx_builder = new TransactionBuilder(ctx.connection, ctx.wallet);
 
-        await heliusAddPriorityFeeToTxBuilder( tx_builder );
+        await heliusAddPriorityFeeToTxBuilder(tx_builder);
 
         // Create token accounts
         required_ta_ix.map((ix) => tx_builder.addInstruction(ix));
@@ -194,8 +196,9 @@ export default async function (position: WhirlpoolPositionInfo, dbWhirlpool: DBW
         const latestBlockhash = await ctx.connection.getLatestBlockhash();
         await ctx.connection.confirmTransaction({ signature, ...latestBlockhash }, "confirmed");
 
-        // Remove this position from the db
-        await dbWhirlpool.destroy();
+        // Get our debits
+        const spentTokenA = new Decimal(dbWhirlpool.remainingSpentTokenA);
+        const spentTokenB = new Decimal(dbWhirlpool.remainingSpentTokenB);
 
         // Update the history
         const history = await DBWhirlpoolHistory.findOne({
@@ -203,42 +206,102 @@ export default async function (position: WhirlpoolPositionInfo, dbWhirlpool: DBW
             order: [["createdAt", "DESC"]]
         });
 
+        // Some calcs for reporting
+        const feeSolInUSDC = position.fees.tokenA.times(position.price);
+        const totalFeesInUSDC = position.fees.tokenB.plus(feeSolInUSDC);
+        const stakeAmountAPrice = position.amountA.times(position.price);
+        const totalStakeValueUSDC = stakeAmountAPrice.plus(position.amountB);
+
         // Set the history
         if (history) {
             history.closed = new Date();
             history.receivedFeesTokenA = (history.receivedFeesTokenA != null ? new Decimal(history.receivedFeesTokenA).plus(position.fees.tokenA) : position.fees.tokenA).toString()
             history.receivedFeesTokenA = (history.receivedFeesTokenB != null ? new Decimal(history.receivedFeesTokenB).plus(position.fees.tokenB) : position.fees.tokenB).toString()
+            history.closedPriceUSDC = totalStakeValueUSDC.toString();
+            await history.save();
         }
 
         // The profits
-        let profitA = position.fees.tokenA.times(TAKE_PROFIT_PERCENT.toDecimal()).div(100);
-        let profitB = position.fees.tokenB.times(TAKE_PROFIT_PERCENT.toDecimal()).div(100);
+        const profitA = position.fees.tokenA;
+        const profitB = position.fees.tokenB;
 
-        debug( "before profitA=%s, profitB=%s", profitA, profitB );
+        debug("before profitA=%s, profitB=%s, spentTokenA=%s, spentTokenB=%s", profitA, profitB, spentTokenA, spentTokenB);
 
-        // Quick array for processing
-        const tokenAandB = [ position.tokenA, position.tokenB ];
+        const profitMinusSpentTokenA = Decimal.max( 0, profitA.minus(spentTokenA) );
+        const profitMinusSpentTokenB = Decimal.max( 0, profitB.minus(spentTokenB) );
 
-        // Make sure to cover your losses
-        [ profitA, profitB ] = [ profitA, profitB ].map( ( profit, index )=>
-            // Adjust for the amount of money we got swindled for opening up the position
-            tokenAandB[ index ].mint.equals(SOLANA.mint) ? Decimal.max( 0, profit.minus( OPEN_POSITION_FEE ) ) : profit
-        );
+        debug("profitMinusSpentTokenA=%s, profitMinusSpentTokenB=%s", profitMinusSpentTokenA, profitMinusSpentTokenB);
 
-        debug( "after profitA=%s, profitB=%s", profitA, profitB );
+        const totalProfitA = profitMinusSpentTokenA.times(TAKE_PROFIT_PERCENT.toDecimal()).div(100);
+        const totalProfitB = profitMinusSpentTokenB.times(TAKE_PROFIT_PERCENT.toDecimal()).div(100);
+
+        debug("totalProfitA=%s, totalProfitB=%s", totalProfitA, totalProfitB);
 
         // Add the rewards to our holdings
-        await incrementTokenHoldings(profitA, position.tokenA);
-        await incrementTokenHoldings(profitB, position.tokenB);
+        await incrementTokenHoldings(totalProfitA, position.tokenA);
+        await incrementTokenHoldings(totalProfitB, position.tokenB);
+
+        // Profit in sol
+        const totalProfitAInUSDC = totalProfitA.times(position.price);
+
+        // Prepare the text
+        const text = util.format(`Closed Position [%s]
+        
+Opened: %s
+
+Price: %s
+Low price: %s (%s%% from current)
+High price: %s (%s%% from current)
+
+Fees total: %s USDC (%s%%)
+Fees USDC: %s
+Fees SOL: %s (%s USDC)
+
+Profits total: %s USDC
+Profits USDC: %s
+Profits SOL: %s (%s USDC)
+
+Stake total: %s USDC
+SOL amount: %s (%s USDC, %s%%)
+USDC amount: %s (%s%%)
+
+Last rebalance: %s`,
+            position.publicKey, dbWhirlpool.createdAt.toLocaleString(), // Created at???
+
+            position.price.toFixed(4),
+            position.lowerPrice.toFixed(4), position.price.minus(position.lowerPrice).div(position.price).times(100).toFixed(2),
+            position.upperPrice.toFixed(4), position.upperPrice.minus(position.price).div(position.price).times(100).toFixed(2),
+
+            totalFeesInUSDC.toFixed(2), totalFeesInUSDC.div(totalStakeValueUSDC).times(100).toFixed(2),
+            position.fees.tokenB.toFixed(2),
+            position.fees.tokenA, feeSolInUSDC.toFixed(2),
+
+            totalProfitAInUSDC.plus(totalProfitB).toFixed(2),
+            totalProfitB.toFixed(2),
+            totalProfitA, totalProfitAInUSDC,
+
+            totalStakeValueUSDC.toFixed(2),
+            position.amountA, stakeAmountAPrice.toFixed(2), stakeAmountAPrice.div(totalStakeValueUSDC).times(100).toFixed(2),
+            position.amountB.toFixed(2), position.amountB.div(totalStakeValueUSDC).times(100).toFixed(2),
+
+            dbWhirlpool.lastRewardsCollected ? dbWhirlpool.lastRewardsCollected.toLocaleString() : "Never"
+        );
+
+        // Send a heartbeat
+        await alertViaTelegram(text);
+
+
+        // Remove this position from the db
+        await dbWhirlpool.destroy();
 
         logger.info("Position closed [%s]. Fees claimed tokenA=%s, tokenB=%s.", position.publicKey, position.fees.tokenA, position.fees.tokenB);
     }
     catch (e) {
         logger.error("Error closing position [%s].", position.publicKey, e);
-        debug( "position close error", e );
+        debug("position close error", e);
 
-        return( false );
+        return (false);
     }
 
-    return( true );
+    return (true);
 }
