@@ -1,4 +1,4 @@
-import { DataTypes, InferAttributes, InferCreationAttributes, Model, Sequelize } from 'sequelize';
+import { CreationOptional, DataTypes, InferAttributes, InferCreationAttributes, Model, Sequelize } from 'sequelize';
 import { sqliteLogger as sequelizeLogger } from './logger';
 
 export const sequelize = new Sequelize({
@@ -35,6 +35,10 @@ export class DBWhirlpool extends Model<InferAttributes<DBWhirlpool>, InferCreati
 	declare outOfRangeSince: Date | null;
 	declare feeUSD: string;
 	declare lastRewardsCollected: Date | null;
+	// createdAt can be undefined during creation
+	declare createdAt: CreationOptional<Date>;
+	// updatedAt can be undefined during creation
+	declare updatedAt: CreationOptional<Date>;
 }
 
 DBWhirlpool.init({
@@ -53,7 +57,9 @@ DBWhirlpool.init({
 	},
 	lastRewardsCollected: {
 		type: DataTypes.DATE
-	}
+	},
+	createdAt: DataTypes.DATE,
+    updatedAt: DataTypes.DATE,
 },
 	{
 		sequelize,

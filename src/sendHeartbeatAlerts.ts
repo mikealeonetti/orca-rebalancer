@@ -40,6 +40,9 @@ export default async function (positions: WhirlpoolPositionInfo[]): Promise<void
 
         // Fee SOL in USDC
         const feeSolInUSDC = position.fees.tokenA.times(position.price);
+        const totalFeesInUSDC = position.fees.tokenB.plus(feeSolInUSDC);
+        const stakeAmountAPrice = position.amountA.times( position.price );
+        const totalStakeValueUSDC = stakeAmountAPrice.plus( position.amountB );
 
         // Prepare the text
         const text = util.format(`Position [%s]
@@ -50,20 +53,28 @@ Price: %s
 Low price: %s (%s%% from current)
 High price: %s (%s%% from current)
 
-Fee total: %s USDC
-Fee USDC: %s
-Fee SOL: %s (%s USDC)
+Rewards total: %s USDC (%s%%)
+Rewards USDC: %s
+Rewards SOL: %s (%s USDC)
+
+Stake total: %s USDC
+SOL amount: %s (%s USDC, %s%%)
+USDC amount: %s (%s%%)
 
 Last rebalance: %s`,
-            position.publicKey, new Date().toLocaleString(), // Created at???
+            position.publicKey, dbWhirlpool.createdAt.toLocaleString(), // Created at???
 
             position.price.toFixed(4),
             position.lowerPrice.toFixed(4), position.price.minus(position.lowerPrice).div(position.price).times(100).toFixed(2),
             position.upperPrice.toFixed(4), position.upperPrice.minus(position.price).div(position.price).times(100).toFixed(2),
 
-            position.fees.tokenB.plus(feeSolInUSDC).toFixed(2),
+            totalFeesInUSDC.toFixed(2), totalFeesInUSDC.div( totalStakeValueUSDC ).times(100).toFixed(2),
             position.fees.tokenB.toFixed(2),
             position.fees.tokenA, feeSolInUSDC.toFixed(2),
+
+            totalStakeValueUSDC.toFixed(2),
+            position.amountA, stakeAmountAPrice.toFixed(2), stakeAmountAPrice.div( totalStakeValueUSDC ).times(100).toFixed(2),
+            position.amountB.toFixed(2), position.amountB.div( totalStakeValueUSDC ).times(100).toFixed(2),
 
             dbWhirlpool.lastRewardsCollected ? dbWhirlpool.lastRewardsCollected.toLocaleString() : "Never"
         );
