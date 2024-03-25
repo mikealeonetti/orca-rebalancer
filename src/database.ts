@@ -105,6 +105,22 @@ DBWhirlpoolHistory.init({
 		]
 	});
 
+export class DBTelegraf extends Model<InferAttributes<DBTelegraf>, InferCreationAttributes<DBTelegraf>> {
+	declare chatID: number;
+}
+
+DBTelegraf.init({
+	chatID: {
+		type: DataTypes.INTEGER,
+		allowNull: false,
+		unique: true
+	}
+},
+	{
+		sequelize,
+		tableName: "Telegrafs"
+	});
+
 export async function initializeDatabase() {
 	// Create the DB
 	await sequelize.sync();

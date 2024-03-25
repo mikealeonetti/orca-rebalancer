@@ -37,3 +37,7 @@ export const MINIMUM_AMOUNT_TO_DEPOSIT_DOLLARS = Number( process.env.MINIMUM_AMO
 export const IS_DEBUG_MODE: Boolean = process.env.IS_DEBUG_MODE != null && toLower(process.env.IS_DEBUG_MODE) == "true" || false;
 
 export const OPEN_POSITION_FEE = Number( process.env.OPEN_POSITION_FEE ) || 0.015;
+
+export const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+
+export const HEARTBEAT_FREQUENCY_MINUTES = Number( process.env.HEARTBEAT_FREQUENCY_MINUTES ) || 60;
