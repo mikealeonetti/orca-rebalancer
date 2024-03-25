@@ -22,7 +22,7 @@ export enum PriorityLevel {
     DEFAULT, // 50th percentile
 }
 
-export async function getPriorityFeeEstimateBNonMemo(): Promise<number> {
+export async function getPriorityFeeEstimate(): Promise<number> {
     const payloadToSend = {
         "jsonrpc": "2.0",
         "id": "1",
@@ -48,10 +48,12 @@ export async function getPriorityFeeEstimateBNonMemo(): Promise<number> {
 
     debug("data=", data);
 
-    return round( data.result.priorityFeeLevels.high as number );
+    const priotiyFeeNumber = Number( data.result.priorityFeeLevels.high ) * 1.3;
+
+    return round( priotiyFeeNumber );
 }
 
-const getPriorityFeeEstimate = memoize(getPriorityFeeEstimateBNonMemo, { maxAge: 5 * 60 * 100 });
+const memoizedGetPriorityFeeEstimate = memoize(getPriorityFeeEstimate, { maxAge: 5 * 60 * 100 });
 
 export async function heliusCreateDynamicPriorityFeeInstruction(): Promise<TransactionInstruction> {
     const priorityFee = await getPriorityFeeEstimate();

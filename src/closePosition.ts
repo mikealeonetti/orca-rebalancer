@@ -211,8 +211,8 @@ export default async function (position: WhirlpoolPositionInfo, dbWhirlpool: DBW
         }
 
         // The profits
-        let profitA = position.fees.tokenA.times(TAKE_PROFIT_PERCENT.toDecimal());
-        let profitB = position.fees.tokenB.times(TAKE_PROFIT_PERCENT.toDecimal());
+        let profitA = position.fees.tokenA.times(TAKE_PROFIT_PERCENT.toDecimal()).div(100);
+        let profitB = position.fees.tokenB.times(TAKE_PROFIT_PERCENT.toDecimal()).div(100);
 
         debug( "before profitA=%s, profitB=%s", profitA, profitB );
 

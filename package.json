@@ -8,6 +8,7 @@
     "create-wallet": "tsc && NODE_OPTIONS=--enable-source-maps node dist/create_wallet_json.js",
     "force-deposits": "tsc && NODE_OPTIONS=--enable-source-maps node dist/forceLiquidityDeposit.js",
     "close-positions": "tsc && NODE_OPTIONS=--enable-source-maps node dist/closeAllPositions.js",
+    "tsc" : "tsc",
     "lint": "eslint . --ext .ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
