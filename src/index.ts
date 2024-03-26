@@ -13,7 +13,7 @@ import { DBWhirlpool, initializeDatabase } from './database';
 import getPositions from './getPositions';
 import closePosition from './closePosition';
 
-const debug = Debug( "index" );
+const debug = Debug( "rebalancer:index" );
 
 // Environment variables must be defined before script execution
 // ANCHOR_PROVIDER_URL=https://api.devnet.solana.com

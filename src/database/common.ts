@@ -1,7 +1,7 @@
-import { InferAttributes, InferCreationAttributes, Model, Sequelize } from 'sequelize';
-import { sqliteLogger as sequelizeLogger } from '../logger';
-import { SequelizeStorage, Umzug } from 'umzug';
 import path from 'path';
+import { Sequelize } from 'sequelize';
+import { SequelizeStorage, Umzug } from 'umzug';
+import { sqliteLogger as sequelizeLogger } from '../logger';
 
 export const sequelize = new Sequelize({
 	dialect: 'sqlite',

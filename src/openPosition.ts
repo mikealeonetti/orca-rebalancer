@@ -15,7 +15,7 @@ import { client, ctx } from "./solana";
 import util from 'util';
 import { alertViaTelegram } from "./telegram";
 
-const debug = Debug("openPosition");
+const debug = Debug("rebalancer:openPosition");
 
 async function getSpendableAmounts(token_a: TokenInfo, token_b: TokenInfo): Promise<[Decimal, Decimal]> {
     return await Promise.all([token_a, token_b].map(async (token: TokenInfo): Promise<Decimal> => {

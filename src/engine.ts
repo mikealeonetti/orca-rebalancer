@@ -10,7 +10,7 @@ import Debug from 'debug';
 import sendHeartbeatAlerts from "./sendHeartbeatAlerts";
 import shouldTriggerRedeposit from "./shouldTriggerRedeposit";
 
-const debug = Debug( "engine" );
+const debug = Debug( "rebalancer:engine" );
 
 export default async function (): Promise<void> {
     // The main async event loop

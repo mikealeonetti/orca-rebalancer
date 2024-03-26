@@ -8,7 +8,7 @@ import Bluebird from "bluebird";
 
 import Debug from 'debug';
 
-const debug = Debug( "closeOutOfRangePositions" );
+const debug = Debug( "rebalancer:closeOutOfRangePositions" );
 
 async function handlePosition(position: WhirlpoolPositionInfo): Promise<boolean> {
     // Shorthand the mint

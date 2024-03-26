@@ -9,7 +9,7 @@ import { TransactionBuilder } from "@orca-so/common-sdk";
 import { round } from "lodash";
 import { IS_PRODUCTION } from "./constants";
 
-const debug = Debug("heliusPriority");
+const debug = Debug("rebalancer:heliusPriority");
 
 export enum PriorityLevel {
     NONE, // 0th percentile

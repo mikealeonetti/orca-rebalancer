@@ -9,7 +9,7 @@ import Decimal from "decimal.js";
 import calculateFees, { Fees } from "./calculateFees";
 import { client, ctx } from "./solana";
 
-const debug = Debug("getPositions");
+const debug = Debug("rebalancer:getPositions");
 
 interface WhirlpoolPositionAndPublicKey {
     position: PositionData;

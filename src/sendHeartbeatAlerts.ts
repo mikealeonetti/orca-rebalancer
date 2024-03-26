@@ -8,7 +8,7 @@ import { HEARTBEAT_FREQUENCY_MINUTES } from "./constants";
 import logger from "./logger";
 import { alertViaTelegram } from "./telegram";
 
-const debug = Debug("sendHeartbeatAlerts");
+const debug = Debug("rebalancer:sendHeartbeatAlerts");
 
 const HEARTBEAT_KEY = "lastHeartbeatAlert";
 

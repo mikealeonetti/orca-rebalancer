@@ -7,7 +7,7 @@ import BN from "bn.js";
 
 import Debug from 'debug';
 
-const debug = Debug("getTokenBalance");
+const debug = Debug("rebalancer:getTokenBalance");
 
 export default async function( wantedMint : PublicKey ) : Promise<Decimal> {
 

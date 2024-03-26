@@ -8,7 +8,7 @@ import collectFees from "./collectFees";
 import openPosition from "./openPosition";
 import { attemptBeforeFail } from "./utils";
 
-const debug = Debug("shouldTriggerRedeposit");
+const debug = Debug("rebalancer:shouldTriggerRedeposit");
 
 export default async function (positions: WhirlpoolPositionInfo[]) {
     // Loop each whirlperl

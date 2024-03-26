@@ -6,7 +6,7 @@ import { Update } from "telegraf/typings/core/types/typegram";
 import { DBTelegraf } from "./database";
 import logger from "./logger";
 
-const debug = Debug( "telegram" );
+const debug = Debug( "rebalancer:telegram" );
 
 // Our bot
 let bot : Telegraf<Context<Update>>;

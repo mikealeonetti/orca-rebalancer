@@ -15,7 +15,7 @@ import { alertViaTelegram } from "./telegram";
 import { incrementTokenHoldings } from "./propertiesHelper";
 import { TAKE_PROFIT_PERCENT } from "./constants";
 
-const debug = Debug("collectFees");
+const debug = Debug("rebalancer:collectFees");
 
 export default async function (position: WhirlpoolPositionInfo): Promise<void> {
     const position_owner = ctx.wallet.publicKey;

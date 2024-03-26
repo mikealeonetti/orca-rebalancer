@@ -1,20 +1,20 @@
+import { DecimalUtil, EMPTY_INSTRUCTION, Instruction, TransactionBuilder, resolveOrCreateATA } from "@orca-so/common-sdk";
 import { PDAUtil, PoolUtil, WhirlpoolIx, decreaseLiquidityQuoteByLiquidityWithParams } from "@orca-so/whirlpools-sdk";
+import { getAssociatedTokenAddressSync } from "@solana/spl-token";
+import { PublicKey } from "@solana/web3.js";
+import Debug from 'debug';
+import Decimal from "decimal.js";
+import util from 'util';
+import { TAKE_PROFIT_PERCENT, WITHDRAW_SLIPPAGE } from "./constants";
 import { DBWhirlpool, DBWhirlpoolHistory } from "./database";
 import { WhirlpoolPositionInfo } from "./getPositions";
-import { client, ctx } from "./solana";
-import { DecimalUtil, EMPTY_INSTRUCTION, Instruction, TransactionBuilder, resolveOrCreateATA } from "@orca-so/common-sdk";
-import { PublicKey } from "@solana/web3.js";
-import { getAssociatedTokenAddressSync } from "@solana/spl-token";
-import { OPEN_POSITION_FEE, SOLANA, TAKE_PROFIT_PERCENT, WITHDRAW_SLIPPAGE } from "./constants";
-import Debug from 'debug';
-import logger from "./logger";
-import Decimal from "decimal.js";
-import { incrementTokenHoldings } from "./propertiesHelper";
 import { heliusAddPriorityFeeToTxBuilder } from "./heliusPriority";
+import logger from "./logger";
+import { incrementTokenHoldings } from "./propertiesHelper";
+import { client, ctx } from "./solana";
 import { alertViaTelegram } from "./telegram";
-import util from 'util';
 
-const debug = Debug("closePosition");
+const debug = Debug("rebalancer:closePosition");
 
 export default async function (whirlpoolPositionInfo: WhirlpoolPositionInfo, dbWhirlpool: DBWhirlpool): Promise<boolean> {
     debug("closePosition", whirlpoolPositionInfo, dbWhirlpool);

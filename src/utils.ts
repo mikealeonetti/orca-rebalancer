@@ -2,7 +2,7 @@ import Bluebird from "bluebird";
 
 import Debug from 'debug';
 
-const debug = Debug("utils");
+const debug = Debug("rebalancer:utils");
 
 export async function attemptBeforeFail<T>(
     fn: () => T,
