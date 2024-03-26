@@ -213,7 +213,7 @@ Profits SOL: %s (%s USDC)`,
         publicKeyString,
 
         position.fees.tokenA, position.fees.tokenA.times(position.price).toFixed(2),
-        position.amountB.toFixed(2),
+        position.fees.tokenB.toFixed(2),
 
         totalProfitAInUSDC.plus(totalProfitB).toFixed(2),
         totalProfitB.toFixed(2),

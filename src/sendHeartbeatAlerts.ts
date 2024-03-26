@@ -22,12 +22,10 @@ export default async function (positions: WhirlpoolPositionInfo[]): Promise<void
     debug("lastHeartbeat=%s", lastHeartbeat);
 
     // Is it time?
-    /*
     if ( lastHeartbeat!=null && addMinutes(new Date(lastHeartbeat.value), HEARTBEAT_FREQUENCY_MINUTES) > now) {
         debug("Not time to send another heartbeat.");
         return;
     }
-    */
 
     // Loop each position
     for (const position of positions) {
