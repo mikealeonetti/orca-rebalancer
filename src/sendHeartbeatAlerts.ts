@@ -7,6 +7,7 @@ import Debug from 'debug';
 import { HEARTBEAT_FREQUENCY_MINUTES } from "./constants";
 import logger from "./logger";
 import { alertViaTelegram } from "./telegram";
+import Decimal from "decimal.js";
 
 const debug = Debug("rebalancer:sendHeartbeatAlerts");
 
@@ -22,10 +23,12 @@ export default async function (positions: WhirlpoolPositionInfo[]): Promise<void
     debug("lastHeartbeat=%s", lastHeartbeat);
 
     // Is it time?
+    /*
     if ( lastHeartbeat!=null && addMinutes(new Date(lastHeartbeat.value), HEARTBEAT_FREQUENCY_MINUTES) > now) {
         debug("Not time to send another heartbeat.");
         return;
     }
+    */
 
     // Loop each position
     for (const position of positions) {
@@ -55,6 +58,8 @@ export default async function (positions: WhirlpoolPositionInfo[]): Promise<void
         const totalFeesInUSDC = position.fees.tokenB.plus(feeSolInUSDC);
         const stakeAmountAPrice = position.amountA.times( position.price );
         const totalStakeValueUSDC = stakeAmountAPrice.plus( position.amountB );
+        const lastPrice = new Decimal( dbWhirlpool.previousPrice );
+        const movementPercent = position.price.minus( lastPrice ).div(position.price).times(100);
 
         // The last collection date to calcualte from
         const calculateLastDate = dbWhirlpool.lastRewardsCollected || dbWhirlpool.createdAt || now;
@@ -72,7 +77,7 @@ export default async function (positions: WhirlpoolPositionInfo[]): Promise<void
         
 Opened: %s
 
-Price: %s
+Price: %s (%s%%)
 Low price: %s (%s%% from current)
 High price: %s (%s%% from current)
 
@@ -88,7 +93,7 @@ USDC amount: %s (%s%%)
 Last rebalance: %s`,
             position.publicKey, dbWhirlpool.createdAt.toLocaleString(), // Created at???
 
-            position.price.toFixed(4),
+            position.price.toFixed(4), movementPercent.gt(0) ? `+${movementPercent.toFixed(2)}` : movementPercent.toFixed(2),
             position.lowerPrice.toFixed(4), position.price.minus(position.lowerPrice).div(position.price).times(100).toFixed(2),
             position.upperPrice.toFixed(4), position.upperPrice.minus(position.price).div(position.price).times(100).toFixed(2),
 

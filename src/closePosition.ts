@@ -232,8 +232,8 @@ export default async function (whirlpoolPositionInfo: WhirlpoolPositionInfo, dbW
 
         debug("profitMinusSpentTokenA=%s, profitMinusSpentTokenB=%s", profitMinusSpentTokenA, profitMinusSpentTokenB);
 
-        const totalProfitA = profitMinusSpentTokenA.times(TAKE_PROFIT_PERCENT.toDecimal()).div(100);
-        const totalProfitB = profitMinusSpentTokenB.times(TAKE_PROFIT_PERCENT.toDecimal()).div(100);
+        const totalProfitA = profitMinusSpentTokenA.times(TAKE_PROFIT_PERCENT.toDecimal());
+        const totalProfitB = profitMinusSpentTokenB.times(TAKE_PROFIT_PERCENT.toDecimal());
 
         debug("totalProfitA=%s, totalProfitB=%s", totalProfitA, totalProfitB);
 
