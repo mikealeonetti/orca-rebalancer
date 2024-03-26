@@ -1,5 +1,6 @@
 import { CreationOptional, DataTypes, InferAttributes, InferCreationAttributes, Model } from "sequelize";
 import { sequelize } from "../common";
+import { PublicKey } from "@solana/web3.js";
 
 export class DBWhirlpool extends Model<InferAttributes<DBWhirlpool>, InferCreationAttributes<DBWhirlpool>> {
 	declare publicKey: string;
@@ -11,7 +12,21 @@ export class DBWhirlpool extends Model<InferAttributes<DBWhirlpool>, InferCreati
 	declare createdAt: CreationOptional<Date>;
 	// updatedAt can be undefined during creation
 	declare updatedAt: CreationOptional<Date>;
+	declare previousPrice : CreationOptional<string>;
+
+	declare static getByPublicKeyString : ( publicKey : string )=>Promise<DBWhirlpool|null>;
+	declare static getByPublicKey : ( publicKey : PublicKey )=>Promise<DBWhirlpool|null>;
 }
+
+DBWhirlpool.getByPublicKeyString = function( publicKey : string ) : Promise<DBWhirlpool|null> {
+	return this.findOne({
+		where: { publicKey }
+	});
+};
+
+DBWhirlpool.getByPublicKey = function( publicKey : PublicKey ) : Promise<DBWhirlpool|null> {
+	return this.getByPublicKeyString( publicKey.toString() );
+};
 
 DBWhirlpool.init({
 	publicKey: {
@@ -33,6 +48,11 @@ DBWhirlpool.init({
 	},
 	lastRewardsCollected: {
 		type: DataTypes.DATE
+	},
+	previousPrice : {
+		type: DataTypes.STRING,
+		defaultValue : "0",
+		allowNull : false
 	},
 	createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,

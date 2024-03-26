@@ -5,11 +5,18 @@ import { sequelize } from "../common";
 export class DBProperty extends Model<InferAttributes<DBProperty>, InferCreationAttributes<DBProperty>> {
 	declare key: string;
 	declare value: string;
-		// createdAt can be undefined during creation
-		declare createdAt: CreationOptional<Date>;
-		// updatedAt can be undefined during creation
-		declare updatedAt: CreationOptional<Date>;
+	// createdAt can be undefined during creation
+	declare createdAt: CreationOptional<Date>;
+	// updatedAt can be undefined during creation
+	declare updatedAt: CreationOptional<Date>;
+
+	declare static getByKey: (key: string) => Promise<DBProperty | null>;
 }
+
+DBProperty.getByKey = function (key: string): Promise<DBProperty | null> {
+	return this.findOne({ where: { key } });
+};
+
 DBProperty.init({
 	key: {
 		type: DataTypes.STRING,
@@ -21,7 +28,7 @@ DBProperty.init({
 		allowNull: false
 	},
 	createdAt: DataTypes.DATE,
-    updatedAt: DataTypes.DATE,
+	updatedAt: DataTypes.DATE,
 },
 	{
 		sequelize,

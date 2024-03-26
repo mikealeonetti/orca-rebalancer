@@ -1,5 +1,6 @@
 import { CreationOptional, DataTypes, InferAttributes, InferCreationAttributes, Model } from "sequelize";
 import { sequelize } from "../common";
+import { PublicKey } from "@solana/web3.js";
 
 export class DBWhirlpoolHistory extends Model<InferAttributes<DBWhirlpoolHistory>, InferCreationAttributes<DBWhirlpoolHistory>> {
 	declare publicKey: string;
@@ -9,13 +10,27 @@ export class DBWhirlpoolHistory extends Model<InferAttributes<DBWhirlpoolHistory
 	declare totalSpentTokenB: string;
 	declare enteredPriceUSDC: string;
 	declare closedPriceUSDC: string | null;
-	declare receivedFeesTokenA: string | null;
-	declare receivedFeesTokenB: string | null;
+	declare receivedFeesTokenA: CreationOptional<string>;
+	declare receivedFeesTokenB: CreationOptional<string>;
 	// createdAt can be undefined during creation
 	declare createdAt: CreationOptional<Date>;
 	// updatedAt can be undefined during creation
 	declare updatedAt: CreationOptional<Date>;
+
+	declare static getLatestByPublicKeyString : ( publicKey : string )=>Promise<DBWhirlpoolHistory|null>;
+	declare static getLatestByPublicKey : ( publicKey : PublicKey )=>Promise<DBWhirlpoolHistory|null>;
 }
+
+DBWhirlpoolHistory.getLatestByPublicKeyString = function( publicKey : string ) : Promise<DBWhirlpoolHistory|null> {
+	return this.findOne({
+		where: { publicKey },
+		order: [["createdAt", "DESC"]]
+	});
+};
+
+DBWhirlpoolHistory.getLatestByPublicKey = function( publicKey : PublicKey ) : Promise<DBWhirlpoolHistory|null> {
+	return this.getLatestByPublicKeyString( publicKey.toString() );
+};
 
 DBWhirlpoolHistory.init({
 	publicKey: {
@@ -57,5 +72,5 @@ DBWhirlpoolHistory.init({
 },
 	{
 		sequelize,
-		tableName: "WhirlpoolHistories"
+		tableName: "WhirlpoolHistories",
 	});

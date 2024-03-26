@@ -1,11 +1,10 @@
 import { addMinutes } from "date-fns";
-import { DBProperty, DBWhirlpool } from "./database";
-import { WhirlpoolPositionInfo } from "./getPositions";
 import util from 'util';
+import { DBProperty, DBWhirlpool, DBWhirlpoolHistory } from "./database";
+import { WhirlpoolPositionInfo } from "./getPositions";
 
 import Debug from 'debug';
 import { HEARTBEAT_FREQUENCY_MINUTES } from "./constants";
-import { find } from "lodash";
 import logger from "./logger";
 import { alertViaTelegram } from "./telegram";
 
@@ -23,26 +22,52 @@ export default async function (positions: WhirlpoolPositionInfo[]): Promise<void
     debug("lastHeartbeat=%s", lastHeartbeat);
 
     // Is it time?
+    /*
     if ( lastHeartbeat!=null && addMinutes(new Date(lastHeartbeat.value), HEARTBEAT_FREQUENCY_MINUTES) > now) {
         debug("Not time to send another heartbeat.");
         return;
     }
+    */
 
     // Loop each position
     for (const position of positions) {
         // Get from the db
-        const dbWhirlpool = await DBWhirlpool.findOne( { where : { publicKey : position.publicKey.toString() } } );
+        const [
+                dbWhirlpool,
+                dbWhirlpoolHistory
+         ] = await Promise.all( [
+                DBWhirlpool.getByPublicKey( position.publicKey ),
+                DBWhirlpoolHistory.getLatestByPublicKey( position.publicKey )
+         ] );
 
         if (!dbWhirlpool) {
             logger.error("Could not find position [%s] when searching for heartbeat.", position.publicKey);
             continue;
         }
+        if (!dbWhirlpoolHistory) {
+            logger.error("Could not find position history [%s] when searching for heartbeat.", position.publicKey);
+            continue;
+        }
+
+        // Save the last price
+        await dbWhirlpool.update( { previousPrice : position.price.toString() } );
 
         // Fee SOL in USDC
         const feeSolInUSDC = position.fees.tokenA.times(position.price);
         const totalFeesInUSDC = position.fees.tokenB.plus(feeSolInUSDC);
         const stakeAmountAPrice = position.amountA.times( position.price );
         const totalStakeValueUSDC = stakeAmountAPrice.plus( position.amountB );
+
+        // The last collection date to calcualte from
+        const calculateLastDate = dbWhirlpool.lastRewardsCollected || dbWhirlpool.createdAt || now;
+        const millisSinceLastDate = now.valueOf() - calculateLastDate.valueOf();
+        const hoursSinceLastDate = millisSinceLastDate/(60*60*1000);
+        const percentRewards = totalFeesInUSDC.div( totalStakeValueUSDC ).times(100)
+        const percentPerHour = percentRewards.div(hoursSinceLastDate);
+        const estPercentPerDay = percentPerHour.times(24);
+
+        debug( "calculateLastDate=%s, millisSinceLastDate=%s, hoursSinceLastDate=%s, percentPerHour=%s", calculateLastDate, millisSinceLastDate, hoursSinceLastDate, percentPerHour  )
+
 
         // Prepare the text
         const text = util.format(`Position [%s]
@@ -56,6 +81,7 @@ High price: %s (%s%% from current)
 Rewards total: %s USDC (%s%%)
 Rewards USDC: %s
 Rewards SOL: %s (%s USDC)
+Est Per Day: %s%%
 
 Stake total: %s USDC
 SOL amount: %s (%s USDC, %s%%)
@@ -68,9 +94,10 @@ Last rebalance: %s`,
             position.lowerPrice.toFixed(4), position.price.minus(position.lowerPrice).div(position.price).times(100).toFixed(2),
             position.upperPrice.toFixed(4), position.upperPrice.minus(position.price).div(position.price).times(100).toFixed(2),
 
-            totalFeesInUSDC.toFixed(2), totalFeesInUSDC.div( totalStakeValueUSDC ).times(100).toFixed(2),
+            totalFeesInUSDC.toFixed(2), percentRewards.toFixed(2),
             position.fees.tokenB.toFixed(2),
             position.fees.tokenA, feeSolInUSDC.toFixed(2),
+            estPercentPerDay.toFixed(2),
 
             totalStakeValueUSDC.toFixed(2),
             position.amountA, stakeAmountAPrice.toFixed(2), stakeAmountAPrice.div( totalStakeValueUSDC ).times(100).toFixed(2),

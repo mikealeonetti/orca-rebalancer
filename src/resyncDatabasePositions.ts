@@ -30,7 +30,8 @@ export default async function (positions: WhirlpoolPositionInfo[]): Promise<void
         await DBWhirlpool.create( {
             publicKey,
             remainingSpentTokenA : positionFeeA.toString(),
-            remainingSpentTokenB : "0"
+            remainingSpentTokenB : "0",
+            previousPrice : position.price.toString()
         } );
 
         // Add to the history

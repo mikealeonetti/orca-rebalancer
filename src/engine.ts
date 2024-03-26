@@ -8,6 +8,7 @@ import resyncDatabasePositions from "./resyncDatabasePositions";
 
 import Debug from 'debug';
 import sendHeartbeatAlerts from "./sendHeartbeatAlerts";
+import shouldTriggerRedeposit from "./shouldTriggerRedeposit";
 
 const debug = Debug( "engine" );
 
@@ -19,7 +20,7 @@ export default async function (): Promise<void> {
             // Get all open positions
             let openPositions = await getPositions();
 
-            debug( "openPositions=", openPositions );   
+            debug( "openPositions=", openPositions );
 
             // Cross check the database
             await resyncDatabasePositions(openPositions);
@@ -32,6 +33,9 @@ export default async function (): Promise<void> {
             // Send heartbeats
             // This should probably go after
             await sendHeartbeatAlerts(openPositions );
+
+            // Do we have to trigger a re-deposit?
+            await shouldTriggerRedeposit(openPositions);
 
             // Do we have no more positions open?
             if( isEmpty(openPositions) ) {

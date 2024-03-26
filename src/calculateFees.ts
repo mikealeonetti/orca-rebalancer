@@ -30,8 +30,10 @@ export default async function (position: PositionData, whirlpool : Whirlpool, to
         whirlpool: whirlpool.getData(),
         position: position,
         tickLower: tick_lower,
-        tickUpper: tick_upper,
+        tickUpper: tick_upper
     });
+
+    debug("quote_fee quote_fee.feeOwedA=%s, quote_fee.feeOwedB=%s", quote_fee.feeOwedA, quote_fee.feeOwedB);
 
     const fees : Fees = {
         tokenA : DecimalUtil.adjustDecimals(new Decimal(quote_fee.feeOwedA.toString()), tokenA.decimals),

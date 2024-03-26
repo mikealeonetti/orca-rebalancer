@@ -16,19 +16,19 @@ import util from 'util';
 
 const debug = Debug("closePosition");
 
-export default async function (position: WhirlpoolPositionInfo, dbWhirlpool: DBWhirlpool): Promise<boolean> {
-    debug("closePosition", position, dbWhirlpool);
+export default async function (whirlpoolPositionInfo: WhirlpoolPositionInfo, dbWhirlpool: DBWhirlpool): Promise<boolean> {
+    debug("closePosition", whirlpoolPositionInfo, dbWhirlpool);
 
     try {
 
         // Get the position and the pool to which the position belongs
         //const position = await client.getPosition(position_pubkey);
         const position_owner = ctx.wallet.publicKey;
-        const position_token_account = getAssociatedTokenAddressSync(position.position.positionMint, position_owner);
+        const position_token_account = getAssociatedTokenAddressSync(whirlpoolPositionInfo.position.positionMint, position_owner);
         //const whirlpool_pubkey = position.getData().whirlpool;
 
 
-        const whirlpool = await client.getPool(position.position.whirlpool);
+        const whirlpool = await client.getPool(whirlpoolPositionInfo.position.whirlpool);
         const whirlpoolData = whirlpool.getData();
 
         const token_a = whirlpool.getTokenAInfo();
@@ -36,20 +36,20 @@ export default async function (position: WhirlpoolPositionInfo, dbWhirlpool: DBW
 
         // Get TickArray and Tick
         const tick_spacing = whirlpoolData.tickSpacing;
-        const tick_array_lower_pubkey = PDAUtil.getTickArrayFromTickIndex(position.position.tickLowerIndex,
+        const tick_array_lower_pubkey = PDAUtil.getTickArrayFromTickIndex(whirlpoolPositionInfo.position.tickLowerIndex,
             tick_spacing,
-            position.position.whirlpool,
+            whirlpoolPositionInfo.position.whirlpool,
             ctx.program.programId).publicKey;
-        const tick_array_upper_pubkey = PDAUtil.getTickArrayFromTickIndex(position.position.tickUpperIndex,
+        const tick_array_upper_pubkey = PDAUtil.getTickArrayFromTickIndex(whirlpoolPositionInfo.position.tickUpperIndex,
             tick_spacing,
-            position.position.whirlpool,
+            whirlpoolPositionInfo.position.whirlpool,
             ctx.program.programId).publicKey;
 
         // Create token accounts to receive fees and rewards
         // Collect mint addresses of tokens to receive
         const tokens_to_be_collected = new Set<string>();
-        tokens_to_be_collected.add(position.tokenA.mint.toBase58());
-        tokens_to_be_collected.add(position.tokenB.mint.toBase58());
+        tokens_to_be_collected.add(whirlpoolPositionInfo.tokenA.mint.toBase58());
+        tokens_to_be_collected.add(whirlpoolPositionInfo.tokenB.mint.toBase58());
 
         whirlpoolData.rewardInfos.map((reward_info) => {
             if (PoolUtil.isRewardInitialized(reward_info)) {
@@ -79,8 +79,8 @@ export default async function (position: WhirlpoolPositionInfo, dbWhirlpool: DBW
         let update_fee_and_rewards_ix = WhirlpoolIx.updateFeesAndRewardsIx(
             ctx.program,
             {
-                whirlpool: position.position.whirlpool,
-                position: position.publicKey,
+                whirlpool: whirlpoolPositionInfo.position.whirlpool,
+                position: whirlpoolPositionInfo.publicKey,
                 tickArrayLower: tick_array_lower_pubkey,
                 tickArrayUpper: tick_array_upper_pubkey,
             }
@@ -90,8 +90,8 @@ export default async function (position: WhirlpoolPositionInfo, dbWhirlpool: DBW
         let collect_fees_ix = WhirlpoolIx.collectFeesIx(
             ctx.program,
             {
-                whirlpool: position.position.whirlpool,
-                position: position.publicKey,
+                whirlpool: whirlpoolPositionInfo.position.whirlpool,
+                position: whirlpoolPositionInfo.publicKey,
                 positionAuthority: position_owner,
                 positionTokenAccount: position_token_account,
                 tokenOwnerAccountA: token_account_map.get(token_a.mint.toBase58()) as PublicKey,
@@ -110,8 +110,8 @@ export default async function (position: WhirlpoolPositionInfo, dbWhirlpool: DBW
             collect_reward_ix[i] = WhirlpoolIx.collectRewardIx(
                 ctx.program,
                 {
-                    whirlpool: position.position.whirlpool,
-                    position: position.publicKey,
+                    whirlpool: whirlpoolPositionInfo.position.whirlpool,
+                    position: whirlpoolPositionInfo.publicKey,
                     positionAuthority: position_owner,
                     positionTokenAccount: position_token_account,
                     rewardIndex: i,
@@ -127,10 +127,10 @@ export default async function (position: WhirlpoolPositionInfo, dbWhirlpool: DBW
             sqrtPrice: whirlpoolData.sqrtPrice,
             tickCurrentIndex: whirlpoolData.tickCurrentIndex,
             // Pass the price range of the position as is
-            tickLowerIndex: position.position.tickLowerIndex,
-            tickUpperIndex: position.position.tickUpperIndex,
+            tickLowerIndex: whirlpoolPositionInfo.position.tickLowerIndex,
+            tickUpperIndex: whirlpoolPositionInfo.position.tickUpperIndex,
             // Liquidity to be withdrawn (All liquidity)
-            liquidity: position.liquidity,
+            liquidity: whirlpoolPositionInfo.liquidity,
             // Acceptable slippage
             slippageTolerance: WITHDRAW_SLIPPAGE,
         });
@@ -144,8 +144,8 @@ export default async function (position: WhirlpoolPositionInfo, dbWhirlpool: DBW
             ctx.program,
             {
                 ...quote,
-                whirlpool: position.position.whirlpool,
-                position: position.publicKey,
+                whirlpool: whirlpoolPositionInfo.position.whirlpool,
+                position: whirlpoolPositionInfo.publicKey,
                 positionAuthority: position_owner,
                 positionTokenAccount: position_token_account,
                 tokenOwnerAccountA: token_account_map.get(token_a.mint.toBase58()) as PublicKey,
@@ -161,10 +161,10 @@ export default async function (position: WhirlpoolPositionInfo, dbWhirlpool: DBW
         const close_position_ix = WhirlpoolIx.closePositionIx(
             ctx.program,
             {
-                position: position.publicKey,
+                position: whirlpoolPositionInfo.publicKey,
                 positionAuthority: position_owner,
                 positionTokenAccount: position_token_account,
-                positionMint: position.position.positionMint,
+                positionMint: whirlpoolPositionInfo.position.positionMint,
                 receiver: position_owner,
             }
         );
@@ -202,28 +202,28 @@ export default async function (position: WhirlpoolPositionInfo, dbWhirlpool: DBW
 
         // Update the history
         const history = await DBWhirlpoolHistory.findOne({
-            where: { publicKey: position.publicKey.toString() },
+            where: { publicKey: whirlpoolPositionInfo.publicKey.toString() },
             order: [["createdAt", "DESC"]]
         });
 
         // Some calcs for reporting
-        const feeSolInUSDC = position.fees.tokenA.times(position.price);
-        const totalFeesInUSDC = position.fees.tokenB.plus(feeSolInUSDC);
-        const stakeAmountAPrice = position.amountA.times(position.price);
-        const totalStakeValueUSDC = stakeAmountAPrice.plus(position.amountB);
+        const feeSolInUSDC = whirlpoolPositionInfo.fees.tokenA.times(whirlpoolPositionInfo.price);
+        const totalFeesInUSDC = whirlpoolPositionInfo.fees.tokenB.plus(feeSolInUSDC);
+        const stakeAmountAPrice = whirlpoolPositionInfo.amountA.times(whirlpoolPositionInfo.price);
+        const totalStakeValueUSDC = stakeAmountAPrice.plus(whirlpoolPositionInfo.amountB);
 
         // Set the history
         if (history) {
             history.closed = new Date();
-            history.receivedFeesTokenA = (history.receivedFeesTokenA != null ? new Decimal(history.receivedFeesTokenA).plus(position.fees.tokenA) : position.fees.tokenA).toString()
-            history.receivedFeesTokenA = (history.receivedFeesTokenB != null ? new Decimal(history.receivedFeesTokenB).plus(position.fees.tokenB) : position.fees.tokenB).toString()
+            history.receivedFeesTokenA = (history.receivedFeesTokenA != null ? new Decimal(history.receivedFeesTokenA).plus(whirlpoolPositionInfo.fees.tokenA) : whirlpoolPositionInfo.fees.tokenA).toString()
+            history.receivedFeesTokenB = (history.receivedFeesTokenB != null ? new Decimal(history.receivedFeesTokenB).plus(whirlpoolPositionInfo.fees.tokenB) : whirlpoolPositionInfo.fees.tokenB).toString()
             history.closedPriceUSDC = totalStakeValueUSDC.toString();
             await history.save();
         }
 
         // The profits
-        const profitA = position.fees.tokenA;
-        const profitB = position.fees.tokenB;
+        const profitA = whirlpoolPositionInfo.fees.tokenA;
+        const profitB = whirlpoolPositionInfo.fees.tokenB;
 
         debug("before profitA=%s, profitB=%s, spentTokenA=%s, spentTokenB=%s", profitA, profitB, spentTokenA, spentTokenB);
 
@@ -238,11 +238,11 @@ export default async function (position: WhirlpoolPositionInfo, dbWhirlpool: DBW
         debug("totalProfitA=%s, totalProfitB=%s", totalProfitA, totalProfitB);
 
         // Add the rewards to our holdings
-        await incrementTokenHoldings(totalProfitA, position.tokenA);
-        await incrementTokenHoldings(totalProfitB, position.tokenB);
+        await incrementTokenHoldings(totalProfitA, whirlpoolPositionInfo.tokenA);
+        await incrementTokenHoldings(totalProfitB, whirlpoolPositionInfo.tokenB);
 
         // Profit in sol
-        const totalProfitAInUSDC = totalProfitA.times(position.price);
+        const totalProfitAInUSDC = totalProfitA.times(whirlpoolPositionInfo.price);
 
         // Prepare the text
         const text = util.format(`Closed Position [%s]
@@ -266,23 +266,23 @@ SOL amount: %s (%s USDC, %s%%)
 USDC amount: %s (%s%%)
 
 Last rebalance: %s`,
-            position.publicKey, dbWhirlpool.createdAt.toLocaleString(), // Created at???
+            whirlpoolPositionInfo.publicKey, dbWhirlpool.createdAt.toLocaleString(), // Created at???
 
-            position.price.toFixed(4),
-            position.lowerPrice.toFixed(4), position.price.minus(position.lowerPrice).div(position.price).times(100).toFixed(2),
-            position.upperPrice.toFixed(4), position.upperPrice.minus(position.price).div(position.price).times(100).toFixed(2),
+            whirlpoolPositionInfo.price.toFixed(4),
+            whirlpoolPositionInfo.lowerPrice.toFixed(4), whirlpoolPositionInfo.price.minus(whirlpoolPositionInfo.lowerPrice).div(whirlpoolPositionInfo.price).times(100).toFixed(2),
+            whirlpoolPositionInfo.upperPrice.toFixed(4), whirlpoolPositionInfo.upperPrice.minus(whirlpoolPositionInfo.price).div(whirlpoolPositionInfo.price).times(100).toFixed(2),
 
             totalFeesInUSDC.toFixed(2), totalFeesInUSDC.div(totalStakeValueUSDC).times(100).toFixed(2),
-            position.fees.tokenB.toFixed(2),
-            position.fees.tokenA, feeSolInUSDC.toFixed(2),
+            whirlpoolPositionInfo.fees.tokenB.toFixed(2),
+            whirlpoolPositionInfo.fees.tokenA, feeSolInUSDC.toFixed(2),
 
             totalProfitAInUSDC.plus(totalProfitB).toFixed(2),
             totalProfitB.toFixed(2),
             totalProfitA, totalProfitAInUSDC,
 
             totalStakeValueUSDC.toFixed(2),
-            position.amountA, stakeAmountAPrice.toFixed(2), stakeAmountAPrice.div(totalStakeValueUSDC).times(100).toFixed(2),
-            position.amountB.toFixed(2), position.amountB.div(totalStakeValueUSDC).times(100).toFixed(2),
+            whirlpoolPositionInfo.amountA, stakeAmountAPrice.toFixed(2), stakeAmountAPrice.div(totalStakeValueUSDC).times(100).toFixed(2),
+            whirlpoolPositionInfo.amountB.toFixed(2), whirlpoolPositionInfo.amountB.div(totalStakeValueUSDC).times(100).toFixed(2),
 
             dbWhirlpool.lastRewardsCollected ? dbWhirlpool.lastRewardsCollected.toLocaleString() : "Never"
         );
@@ -294,10 +294,10 @@ Last rebalance: %s`,
         // Remove this position from the db
         await dbWhirlpool.destroy();
 
-        logger.info("Position closed [%s]. Fees claimed tokenA=%s, tokenB=%s.", position.publicKey, position.fees.tokenA, position.fees.tokenB);
+        logger.info("Position closed [%s]. Fees claimed tokenA=%s, tokenB=%s.", whirlpoolPositionInfo.publicKey, whirlpoolPositionInfo.fees.tokenA, whirlpoolPositionInfo.fees.tokenB);
     }
     catch (e) {
-        logger.error("Error closing position [%s].", position.publicKey, e);
+        logger.error("Error closing position [%s].", whirlpoolPositionInfo.publicKey, e);
         debug("position close error", e);
 
         return (false);
