@@ -50,9 +50,6 @@ export default async function (positions: WhirlpoolPositionInfo[]): Promise<void
             continue;
         }
 
-        // Save the last price
-        await dbWhirlpool.update( { previousPrice : position.price.toString() } );
-
         // Fee SOL in USDC
         const feeSolInUSDC = position.fees.tokenA.times(position.price);
         const totalFeesInUSDC = position.fees.tokenB.plus(feeSolInUSDC);
@@ -60,6 +57,9 @@ export default async function (positions: WhirlpoolPositionInfo[]): Promise<void
         const totalStakeValueUSDC = stakeAmountAPrice.plus( position.amountB );
         const lastPrice = new Decimal( dbWhirlpool.previousPrice );
         const movementPercent = position.price.minus( lastPrice ).div(position.price).times(100);
+
+        // Save the last price
+        await dbWhirlpool.update( { previousPrice : position.price.toString() } );
 
         // The last collection date to calcualte from
         const calculateLastDate = dbWhirlpool.lastRewardsCollected || dbWhirlpool.createdAt || now;
