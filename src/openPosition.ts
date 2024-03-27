@@ -143,6 +143,12 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
     // Get the token amounts
     let spendableAmounts = await getSpendableAmounts(token_a, token_b);
 
+    // Do we have any money whatsoever?
+    if( !spendableAmounts.some( amount=>amount.gt(0)) ) {
+        logger.info( "Cannot open a position. Not enough spendable amount. spendableA=%s, spendableB=%s.", ...spendableAmounts );
+        return;
+    }
+
     // Get the total price in the wallet
     //let totalPriceSpendable = spendableAmounts[0].times(price).plus(spendableAmounts[1]);
 
