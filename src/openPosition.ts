@@ -468,6 +468,9 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
             );
 
             logger.info( "Position increased [%s],", newPosition.publicKey );
+
+            // Send a heartbeat
+            await alertViaTelegram(text);
         }
     }
     else {
