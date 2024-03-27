@@ -63,7 +63,13 @@ export default async function (positions: WhirlpoolPositionInfo[]) {
             // Now redeposit
             logger.debug( "Re-depositing." );
 
-            await attemptBeforeFail( ()=>openPosition( position ), 5, 100 );
+            // Update to trigger forcing redeposits
+            await DBWhirlpool.update( {
+                redepositAttemptsRemaining : 10
+            },
+            {
+                where : { publicKey : position.publicKey.toString() }
+            });
         }
         else {
             debug( "Not enough to want to re-deposit." );

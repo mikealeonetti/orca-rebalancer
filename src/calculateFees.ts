@@ -5,7 +5,7 @@ import { ctx } from "./solana";
 
 import Debug from 'debug';
 
-const debug = Debug("calculateFees");
+const debug = Debug("rebalancer:calculateFees");
 
 export interface Fees {
     tokenA : Decimal;

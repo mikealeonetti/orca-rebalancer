@@ -9,6 +9,7 @@ import resyncDatabasePositions from "./resyncDatabasePositions";
 import Debug from 'debug';
 import sendHeartbeatAlerts from "./sendHeartbeatAlerts";
 import shouldTriggerRedeposit from "./shouldTriggerRedeposit";
+import checkForPositionsNeedingRedeposit from "./checkForPositionsNeedingRedeposit";
 
 const debug = Debug( "rebalancer:engine" );
 
@@ -43,6 +44,9 @@ export default async function (): Promise<void> {
 
                 await openPosition();
             }
+
+            // Do we have any positions that need to be redeposited
+            await checkForPositionsNeedingRedeposit(openPositions);
        }
        catch( e ) {
         logger.error( "Error running minute." , e);

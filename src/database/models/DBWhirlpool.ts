@@ -16,6 +16,7 @@ export class DBWhirlpool extends Model<InferAttributes<DBWhirlpool>, InferCreati
 	declare previousReceivedFeesTokenA : CreationOptional<string>;
 	declare previousReceivedFeesTokenB : CreationOptional<string>;
 	declare previousReceivedFeesTotalUSDC : CreationOptional<string>;
+	declare redepositAttemptsRemaining : CreationOptional<number>;
 
 	declare static getByPublicKeyString : ( publicKey : string )=>Promise<DBWhirlpool|null>;
 	declare static getByPublicKey : ( publicKey : PublicKey )=>Promise<DBWhirlpool|null>;
@@ -57,7 +58,6 @@ DBWhirlpool.init({
 		defaultValue : "0",
 		allowNull : false
 	},
-	// New
 	previousReceivedFeesTokenA : {
 		type: DataTypes.STRING,
 		defaultValue : "0",
@@ -71,6 +71,12 @@ DBWhirlpool.init({
 	previousReceivedFeesTotalUSDC : {
 		type: DataTypes.STRING,
 		defaultValue : "0",
+		allowNull : false
+	},
+	// New
+	"redepositAttemptsRemaining" : {
+		type: DataTypes.INTEGER,
+		defaultValue : 0,
 		allowNull : false
 	},
 	// New

@@ -41,3 +41,5 @@ export const OPEN_POSITION_FEE = Number( process.env.OPEN_POSITION_FEE ) || 0.01
 export const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 export const HEARTBEAT_FREQUENCY_MINUTES = Number( process.env.HEARTBEAT_FREQUENCY_MINUTES ) || 60;
+
+export const MAX_RETRIES_SETTING = 5;

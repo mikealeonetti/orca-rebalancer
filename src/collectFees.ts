@@ -13,7 +13,7 @@ import Debug from 'debug';
 import logger from "./logger";
 import { alertViaTelegram } from "./telegram";
 import { incrementTokenHoldings } from "./propertiesHelper";
-import { TAKE_PROFIT_PERCENT } from "./constants";
+import { MAX_RETRIES_SETTING, TAKE_PROFIT_PERCENT } from "./constants";
 
 const debug = Debug("rebalancer:collectFees");
 
@@ -125,7 +125,7 @@ export default async function (position: WhirlpoolPositionInfo): Promise<void> {
         .addInstruction(collect_reward_ix[2]);
 
     // Send the transaction
-    const signature = await tx_builder.buildAndExecute();
+    const signature = await tx_builder.buildAndExecute( undefined, { maxRetries : MAX_RETRIES_SETTING } );
     console.log("signature:", signature);
 
     // Wait for the transaction to complete
@@ -167,6 +167,11 @@ export default async function (position: WhirlpoolPositionInfo): Promise<void> {
 
         dbWhirlpool.remainingSpentTokenA = tokenAAdjusted.toString();
         dbWhirlpool.remainingSpentTokenB = tokenBAdjusted.toString();
+
+        // Reset these
+        dbWhirlpool.previousReceivedFeesTokenA = "0";
+        dbWhirlpool.previousReceivedFeesTokenB = "0";
+        dbWhirlpool.previousReceivedFeesTotalUSDC = "0";
 
         // Save it
         await dbWhirlpool.save();

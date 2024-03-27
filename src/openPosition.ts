@@ -4,7 +4,7 @@ import { PublicKey } from "@solana/web3.js";
 import Debug from 'debug';
 import Decimal from "decimal.js";
 import { find, round } from "lodash";
-import { DEPOSIT_SLIPPAGE, GAS_TO_SAVE, OPEN_POSITION_FEE, RANGE_PERCENT, SOLANA, SWAP_SLIPPAGE, USDC, WANTED_TICK_SPACING, WHIRLPOOLS_CONFIG } from "./constants";
+import { DEPOSIT_SLIPPAGE, GAS_TO_SAVE, MAX_RETRIES_SETTING, OPEN_POSITION_FEE, RANGE_PERCENT, SOLANA, SWAP_SLIPPAGE, USDC, WANTED_TICK_SPACING, WHIRLPOOLS_CONFIG } from "./constants";
 import { DBWhirlpool, DBWhirlpoolHistory } from "./database";
 import getPositions, { WhirlpoolPositionInfo } from "./getPositions";
 import getTokenBalance from "./getTokenBalance";
@@ -145,7 +145,7 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
 
     // Do we have any money whatsoever?
     if( !spendableAmounts.some( amount=>amount.gt(0)) ) {
-        logger.info( "Cannot open a position. Not enough spendable amount. spendableA=%s, spendableB=%s.", ...spendableAmounts );
+        logger.warn( "Cannot open a position. Not enough spendable amount. spendableA=%s, spendableB=%s.", ...spendableAmounts );
         return;
     }
 
@@ -285,7 +285,7 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
         // Add the priority
         await heliusAddPriorityFeeToTxBuilder(tx);
 
-        const signature = await tx.buildAndExecute();
+        const signature = await tx.buildAndExecute( undefined, { maxRetries : MAX_RETRIES_SETTING } );
         debug("signature:", signature);
 
         // Wait for the transaction to complete
@@ -402,7 +402,7 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
         await heliusAddPriorityFeeToTxBuilder(increaseLiquidityTransaction);
 
         // Send the transaction
-        const signature = await increaseLiquidityTransaction.buildAndExecute();
+        const signature = await increaseLiquidityTransaction.buildAndExecute( undefined, { maxRetries : MAX_RETRIES_SETTING } );
 
         // Wait for the transaction to complete
         const latest_blockhash = await ctx.connection.getLatestBlockhash();
@@ -421,6 +421,7 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
 
         // update whirlpool
         if (dbWhirlpool) {
+            dbWhirlpool.redepositAttemptsRemaining = 0; // Stop any further attempts at redeposit
             dbWhirlpool.remainingSpentTokenA = new Decimal(dbWhirlpool.remainingSpentTokenA).plus(tokenAFees).toString();
             dbWhirlpool.remainingSpentTokenB = new Decimal(dbWhirlpool.remainingSpentTokenB).plus(tokenBFees).toString();
             await dbWhirlpool.save();
@@ -481,7 +482,7 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
         await heliusAddPriorityFeeToTxBuilder(open_position_tx.tx);
 
         // Send the transaction
-        const signature = await open_position_tx.tx.buildAndExecute();
+        const signature = await open_position_tx.tx.buildAndExecute( undefined, { maxRetries : MAX_RETRIES_SETTING } );
         debug("signature: %s", signature);
         debug("position NFT: %s", open_position_tx.positionMint);
 

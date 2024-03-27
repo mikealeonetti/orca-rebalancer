@@ -5,7 +5,7 @@ import { PublicKey } from "@solana/web3.js";
 import Debug from 'debug';
 import Decimal from "decimal.js";
 import util from 'util';
-import { TAKE_PROFIT_PERCENT, WITHDRAW_SLIPPAGE } from "./constants";
+import { MAX_RETRIES_SETTING, TAKE_PROFIT_PERCENT, WITHDRAW_SLIPPAGE } from "./constants";
 import { DBWhirlpool, DBWhirlpoolHistory } from "./database";
 import { WhirlpoolPositionInfo } from "./getPositions";
 import { heliusAddPriorityFeeToTxBuilder } from "./heliusPriority";
@@ -189,7 +189,7 @@ export default async function (whirlpoolPositionInfo: WhirlpoolPositionInfo, dbW
             .addInstruction(close_position_ix);
 
         // Send the transaction
-        const signature = await tx_builder.buildAndExecute();
+        const signature = await tx_builder.buildAndExecute( undefined, { maxRetries : MAX_RETRIES_SETTING } );
         debug("signature:", signature);
 
         // Wait for the transaction to complete
