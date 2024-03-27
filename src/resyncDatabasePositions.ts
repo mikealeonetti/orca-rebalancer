@@ -31,7 +31,10 @@ export default async function (positions: WhirlpoolPositionInfo[]): Promise<void
             publicKey,
             remainingSpentTokenA : positionFeeA.toString(),
             remainingSpentTokenB : "0",
-            previousPrice : position.price.toString()
+            previousPrice : position.price.toString(),
+            previousReceivedFeesTokenA : position.fees.tokenA.toString(),
+            previousReceivedFeesTokenB : position.fees.tokenB.toString(),
+            previousReceivedFeesTotalUSDC : position.fees.tokenB.times( position.price ).plus( position.fees.tokenB ).toString()
         } );
 
         // Add to the history

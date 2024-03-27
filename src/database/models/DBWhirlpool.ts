@@ -13,6 +13,9 @@ export class DBWhirlpool extends Model<InferAttributes<DBWhirlpool>, InferCreati
 	// updatedAt can be undefined during creation
 	declare updatedAt: CreationOptional<Date>;
 	declare previousPrice : CreationOptional<string>;
+	declare previousReceivedFeesTokenA : CreationOptional<string>;
+	declare previousReceivedFeesTokenB : CreationOptional<string>;
+	declare previousReceivedFeesTotalUSDC : CreationOptional<string>;
 
 	declare static getByPublicKeyString : ( publicKey : string )=>Promise<DBWhirlpool|null>;
 	declare static getByPublicKey : ( publicKey : PublicKey )=>Promise<DBWhirlpool|null>;
@@ -54,6 +57,23 @@ DBWhirlpool.init({
 		defaultValue : "0",
 		allowNull : false
 	},
+	// New
+	previousReceivedFeesTokenA : {
+		type: DataTypes.STRING,
+		defaultValue : "0",
+		allowNull : false
+	},
+	previousReceivedFeesTokenB : {
+		type: DataTypes.STRING,
+		defaultValue : "0",
+		allowNull : false
+	},
+	previousReceivedFeesTotalUSDC : {
+		type: DataTypes.STRING,
+		defaultValue : "0",
+		allowNull : false
+	},
+	// New
 	createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,
 },

@@ -1,6 +1,7 @@
 import Bluebird from "bluebird";
 
 import Debug from 'debug';
+import Decimal from "decimal.js";
 
 const debug = Debug("rebalancer:utils");
 
@@ -34,4 +35,11 @@ export async function attemptBeforeFail<T>(
 
     // Uh ohs
     throw lastE;
+}
+
+export function plusOrMinusStringFromDecimal( decimal : Decimal, decimalPlaces? : number ) : string {
+    if( decimalPlaces!=null )
+        return decimal.gt(0) ? `+${decimal.toFixed(decimalPlaces)}` : decimal.toFixed(decimalPlaces);
+
+        return decimal.gt(0) ? `+${decimal.toString()}` : decimal.toString();
 }
