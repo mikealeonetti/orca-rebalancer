@@ -116,7 +116,7 @@ USDC amount: %s (%s%%)
 
 Last rebalance: %s
 
-Profit Taken Total: %s USDC,
+Profit Taken Total: %s USDC
 Profit Taken SOL: %s (%s USDC)
 Profit Taken USDC: %s`,
             // Position key
