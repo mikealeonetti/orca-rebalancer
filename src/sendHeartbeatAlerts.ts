@@ -1,4 +1,4 @@
-import { addMinutes } from "date-fns";
+import { addMinutes, formatDistance } from "date-fns";
 import util from 'util';
 import { DBProperty, DBWhirlpool, DBWhirlpoolHistory } from "./database";
 import { WhirlpoolPositionInfo } from "./getPositions";
@@ -9,6 +9,7 @@ import logger from "./logger";
 import { alertViaTelegram } from "./telegram";
 import Decimal from "decimal.js";
 import { plusOrMinusStringFromDecimal } from "./utils";
+import { getTokenHoldings } from "./propertiesHelper";
 
 const debug = Debug("rebalancer:sendHeartbeatAlerts");
 
@@ -23,21 +24,27 @@ export default async function (positions: WhirlpoolPositionInfo[]): Promise<void
 
     debug("lastHeartbeat=%s", lastHeartbeat);
 
+    /*
     // Is it time?
     if (lastHeartbeat != null && addMinutes(new Date(lastHeartbeat.value), HEARTBEAT_FREQUENCY_MINUTES) > now) {
         debug("Not time to send another heartbeat.");
         return;
     }
+    */
 
     // Loop each position
     for (const position of positions) {
         // Get from the db
         const [
             dbWhirlpool,
-            dbWhirlpoolHistory
+            dbWhirlpoolHistory,
+            tokenAHoldings,
+            tokenBHoldings
         ] = await Promise.all([
             DBWhirlpool.getByPublicKey(position.publicKey),
-            DBWhirlpoolHistory.getLatestByPublicKey(position.publicKey)
+            DBWhirlpoolHistory.getLatestByPublicKey(position.publicKey),
+            getTokenHoldings( position.tokenA ),
+            getTokenHoldings( position.tokenB ),
         ]);
 
         if (!dbWhirlpool) {
@@ -73,6 +80,9 @@ export default async function (positions: WhirlpoolPositionInfo[]): Promise<void
         const previousReceivedFeesTotalUSDC = new Decimal( dbWhirlpool.previousReceivedFeesTotalUSDC );
         const distanceFromEnteredPriceUSDC = totalStakeValueUSDC.minus( enteredPriceUSDC ).div( enteredPriceUSDC ).times( 100 );
 
+        const tokenAHoldingsUSDC = tokenAHoldings.times( position.price );
+        const totalTokenHoldings = tokenAHoldingsUSDC.plus( tokenBHoldings );
+
         // Save the last price
         await dbWhirlpool.update({ 
             previousPrice: position.price.toString(),
@@ -81,10 +91,15 @@ export default async function (positions: WhirlpoolPositionInfo[]): Promise<void
             previousReceivedFeesTotalUSDC : totalFeesInUSDC.toString()
         });
 
+        let lastRebalanceString : string = "Never";
+        
+        if(dbWhirlpool.lastRewardsCollected)
+            lastRebalanceString = `${dbWhirlpool.lastRewardsCollected.toLocaleString()} (${formatDistance( dbWhirlpool.lastRewardsCollected, now )})`
+
         // Prepare the text
         const text = util.format(`Position [%s]
         
-Opened: %s
+Opened: %s (%s)
 
 Price: %s (%s%%)
 Low price: %s (%s%% from current)
@@ -99,9 +114,18 @@ Stake total: %s USDC (%s%% from entry)
 SOL amount: %s (%s USDC, %s%%)
 USDC amount: %s (%s%%)
 
-Last rebalance: %s`,
-            position.publicKey, dbWhirlpool.createdAt.toLocaleString(), // Created at???
+Last rebalance: %s
 
+Profit Taken Total: %s USDC,
+Profit Taken SOL: %s (%s USDC)
+Profit Taken USDC: %s`,
+            // Position key
+            position.publicKey,
+            
+            // Created
+            dbWhirlpool.createdAt.toLocaleString(), formatDistance(dbWhirlpool.createdAt, now),
+
+            // Price
             position.price.toFixed(4), plusOrMinusStringFromDecimal( movementPercent, 2 ),
             position.lowerPrice.toFixed(4), position.price.minus(position.lowerPrice).div(position.price).times(100).toFixed(2),
             position.upperPrice.toFixed(4), position.upperPrice.minus(position.price).div(position.price).times(100).toFixed(2),
@@ -117,7 +141,13 @@ Last rebalance: %s`,
             position.amountA, stakeAmountAPrice.toFixed(2), stakeAmountAPrice.div(totalStakeValueUSDC).times(100).toFixed(2),
             position.amountB.toFixed(2), position.amountB.div(totalStakeValueUSDC).times(100).toFixed(2),
 
-            dbWhirlpool.lastRewardsCollected ? dbWhirlpool.lastRewardsCollected.toLocaleString() : "Never"
+            // Last rebalance
+            lastRebalanceString,
+
+            // Latest profits
+            totalTokenHoldings.toFixed(2),
+            tokenAHoldings, tokenAHoldingsUSDC.toFixed(2),
+            tokenBHoldings.toFixed(2)
         );
 
         // Send a heartbeat
