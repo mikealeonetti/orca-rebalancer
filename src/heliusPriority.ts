@@ -70,7 +70,7 @@ export async function getPriorityFeeEstimate(): Promise<PriorityFeeLevels> {
     return data.result.priorityFeeLevels as PriorityFeeLevels;
 }
 
-const memoizedGetPriorityFeeEstimate = memoize(getPriorityFeeEstimate, { maxAge: 5 * 60 * 100 });
+const memoizedGetPriorityFeeEstimate = memoize(getPriorityFeeEstimate, { maxAge: 5 * 60 * 1000 });
 
 export async function heliusCreateDynamicPriorityFeeInstruction(): Promise<TransactionInstruction> {
     const priorityFee = await getLastGas();
