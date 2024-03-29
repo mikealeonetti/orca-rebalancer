@@ -8,7 +8,7 @@ import { DEPOSIT_SLIPPAGE, GAS_TO_SAVE, MAX_RETRIES_SETTING, OPEN_POSITION_FEE, 
 import { DBWhirlpool, DBWhirlpoolHistory } from "./database";
 import getPositions, { WhirlpoolPositionInfo } from "./getPositions";
 import getTokenBalance from "./getTokenBalance";
-import { heliusAddPriorityFeeToTxBuilder } from "./heliusPriority";
+import { heliusAddPriorityFeeToTxBuilder, heliusIncreaseLastGas } from "./heliusPriority";
 import logger from "./logger";
 import { getTokenHoldings } from "./propertiesHelper";
 import { client, ctx } from "./solana";
@@ -144,8 +144,8 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
     let spendableAmounts = await getSpendableAmounts(token_a, token_b);
 
     // Do we have any money whatsoever?
-    if( !spendableAmounts.some( amount=>amount.gt(0)) ) {
-        logger.warn( "Cannot open a position. Not enough spendable amount. spendableA=%s, spendableB=%s.", ...spendableAmounts );
+    if (!spendableAmounts.some(amount => amount.gt(0))) {
+        logger.warn("Cannot open a position. Not enough spendable amount. spendableA=%s, spendableB=%s.", ...spendableAmounts);
         return;
     }
 
@@ -285,12 +285,19 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
         // Add the priority
         await heliusAddPriorityFeeToTxBuilder(tx);
 
-        const signature = await tx.buildAndExecute( undefined, { maxRetries : MAX_RETRIES_SETTING } );
-        debug("signature:", signature);
+        try {
 
-        // Wait for the transaction to complete
-        const latest_blockhash = await ctx.connection.getLatestBlockhash();
-        await ctx.connection.confirmTransaction({ signature, ...latest_blockhash }, "confirmed");
+            const signature = await tx.buildAndExecute(undefined, { maxRetries: MAX_RETRIES_SETTING });
+            debug("signature:", signature);
+
+            // Wait for the transaction to complete
+            const latest_blockhash = await ctx.connection.getLatestBlockhash();
+            await ctx.connection.confirmTransaction({ signature, ...latest_blockhash }, "confirmed");
+        }
+        catch (e) {
+            await heliusIncreaseLastGas();
+            throw e;
+        }
 
         logger.info("Swap complete.");
 
@@ -401,14 +408,20 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
         // Add the priority
         await heliusAddPriorityFeeToTxBuilder(increaseLiquidityTransaction);
 
-        // Send the transaction
-        const signature = await increaseLiquidityTransaction.buildAndExecute( undefined, { maxRetries : MAX_RETRIES_SETTING } );
+        try {
+            // Send the transaction
+            const signature = await increaseLiquidityTransaction.buildAndExecute(undefined, { maxRetries: MAX_RETRIES_SETTING });
 
-        // Wait for the transaction to complete
-        const latest_blockhash = await ctx.connection.getLatestBlockhash();
-        const rpcResponse = await ctx.connection.confirmTransaction({ signature, ...latest_blockhash }, "confirmed");
+            // Wait for the transaction to complete
+            const latest_blockhash = await ctx.connection.getLatestBlockhash();
+            const rpcResponse = await ctx.connection.confirmTransaction({ signature, ...latest_blockhash }, "confirmed");
 
-        debug("rpcResponse=", rpcResponse);
+            debug("rpcResponse=", rpcResponse);
+        }
+        catch (e) {
+            await heliusIncreaseLastGas();
+            throw e;
+        }
 
         // Increase the fees
         const [
@@ -467,7 +480,7 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
                 newPosition.amountB.toFixed(2), newPosition.amountB.div(totalStakeValueUSDC).times(100).toFixed(2)
             );
 
-            logger.info( "Position increased [%s],", newPosition.publicKey );
+            logger.info("Position increased [%s],", newPosition.publicKey);
 
             // Send a heartbeat
             await alertViaTelegram(text);
@@ -484,8 +497,9 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
         // Add the priority
         await heliusAddPriorityFeeToTxBuilder(open_position_tx.tx);
 
+        try {
         // Send the transaction
-        const signature = await open_position_tx.tx.buildAndExecute( undefined, { maxRetries : MAX_RETRIES_SETTING } );
+        const signature = await open_position_tx.tx.buildAndExecute(undefined, { maxRetries: MAX_RETRIES_SETTING });
         debug("signature: %s", signature);
         debug("position NFT: %s", open_position_tx.positionMint);
 
@@ -494,6 +508,11 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
         const rpcResponse = await ctx.connection.confirmTransaction({ signature, ...latest_blockhash }, "confirmed");
 
         debug("rpcResponse=", rpcResponse);
+        }
+        catch( e ) {
+            await heliusIncreaseLastGas();
+            throw e;
+        }
 
         // Get the position info
         const positionPDA = await PDAUtil.getPosition(ctx.program.programId, open_position_tx.positionMint);
@@ -550,7 +569,7 @@ USDC amount: %s (%s%%)`,
                 enteredPriceUSDC: totalStakeValueUSDC.toString()
             });
 
-            logger.info( "Position opened [%s],", newPosition.publicKey );
+            logger.info("Position opened [%s],", newPosition.publicKey);
         }
     }
 

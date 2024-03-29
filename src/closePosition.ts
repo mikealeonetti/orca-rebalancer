@@ -8,7 +8,7 @@ import util from 'util';
 import { MAX_RETRIES_SETTING, TAKE_PROFIT_PERCENT, WITHDRAW_SLIPPAGE } from "./constants";
 import { DBWhirlpool, DBWhirlpoolHistory } from "./database";
 import { WhirlpoolPositionInfo } from "./getPositions";
-import { heliusAddPriorityFeeToTxBuilder } from "./heliusPriority";
+import { heliusAddPriorityFeeToTxBuilder, heliusIncreaseLastGas } from "./heliusPriority";
 import logger from "./logger";
 import { incrementTokenHoldings } from "./propertiesHelper";
 import { client, ctx } from "./solana";
@@ -188,13 +188,21 @@ export default async function (whirlpoolPositionInfo: WhirlpoolPositionInfo, dbW
             // Close the position
             .addInstruction(close_position_ix);
 
-        // Send the transaction
-        const signature = await tx_builder.buildAndExecute( undefined, { maxRetries : MAX_RETRIES_SETTING } );
-        debug("signature:", signature);
+        try {
+            // Send the transaction
+            const signature = await tx_builder.buildAndExecute(undefined, { maxRetries: MAX_RETRIES_SETTING });
+            debug("signature:", signature);
 
-        // Wait for the transaction to complete
-        const latestBlockhash = await ctx.connection.getLatestBlockhash();
-        await ctx.connection.confirmTransaction({ signature, ...latestBlockhash }, "confirmed");
+            // Wait for the transaction to complete
+            const latestBlockhash = await ctx.connection.getLatestBlockhash();
+            await ctx.connection.confirmTransaction({ signature, ...latestBlockhash }, "confirmed");
+        }
+        catch (e) {
+            await heliusIncreaseLastGas();
+
+            // Rethrow
+            throw e;
+        }
 
         // Get our debits
         const spentTokenA = new Decimal(dbWhirlpool.remainingSpentTokenA);
@@ -227,8 +235,8 @@ export default async function (whirlpoolPositionInfo: WhirlpoolPositionInfo, dbW
 
         debug("before profitA=%s, profitB=%s, spentTokenA=%s, spentTokenB=%s", profitA, profitB, spentTokenA, spentTokenB);
 
-        const profitMinusSpentTokenA = Decimal.max( 0, profitA.minus(spentTokenA) );
-        const profitMinusSpentTokenB = Decimal.max( 0, profitB.minus(spentTokenB) );
+        const profitMinusSpentTokenA = Decimal.max(0, profitA.minus(spentTokenA));
+        const profitMinusSpentTokenB = Decimal.max(0, profitB.minus(spentTokenB));
 
         debug("profitMinusSpentTokenA=%s, profitMinusSpentTokenB=%s", profitMinusSpentTokenA, profitMinusSpentTokenB);
 

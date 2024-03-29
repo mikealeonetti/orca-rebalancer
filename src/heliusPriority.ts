@@ -3,13 +3,23 @@ import memoize from 'memoizee';
 import fetch from 'node-fetch';
 import { ctx } from "./solana";
 
-import { ORCA_WHIRLPOOL_PROGRAM_ID } from "@orca-so/whirlpools-sdk";
-import Debug from 'debug';
 import { TransactionBuilder } from "@orca-so/common-sdk";
-import { round } from "lodash";
+import { ORCA_WHIRLPOOL_PROGRAM_ID } from "@orca-so/whirlpools-sdk";
+import { addMinutes } from "date-fns";
+import Debug from 'debug';
 import { IS_PRODUCTION } from "./constants";
 
 const debug = Debug("rebalancer:heliusPriority");
+
+interface LastGasAndExpiry {
+    expiry: Date | null;
+    lastGas: number | null;
+}
+
+const lastGasAndExpiry: LastGasAndExpiry = {
+    lastGas: null,
+    expiry: null
+};
 
 export enum PriorityLevel {
     NONE, // 0th percentile
@@ -22,7 +32,16 @@ export enum PriorityLevel {
     DEFAULT, // 50th percentile
 }
 
-export async function getPriorityFeeEstimate(): Promise<number> {
+interface PriorityFeeLevels {
+    min: number;
+    low: number;
+    medium: number;
+    high: number;
+    veryHigh: number;
+    unsafeMax: number;
+}
+
+export async function getPriorityFeeEstimate(): Promise<PriorityFeeLevels> {
     const payloadToSend = {
         "jsonrpc": "2.0",
         "id": "1",
@@ -48,15 +67,13 @@ export async function getPriorityFeeEstimate(): Promise<number> {
 
     debug("data=", data);
 
-    const priotiyFeeNumber = Number( data.result.priorityFeeLevels.high ) * 1.3;
-
-    return round( priotiyFeeNumber );
+    return data.result.priorityFeeLevels as PriorityFeeLevels;
 }
 
 const memoizedGetPriorityFeeEstimate = memoize(getPriorityFeeEstimate, { maxAge: 5 * 60 * 100 });
 
 export async function heliusCreateDynamicPriorityFeeInstruction(): Promise<TransactionInstruction> {
-    const priorityFee = await getPriorityFeeEstimate();
+    const priorityFee = await getLastGas();
 
     debug("result=", priorityFee);
 
@@ -66,16 +83,58 @@ export async function heliusCreateDynamicPriorityFeeInstruction(): Promise<Trans
     return priorityFeeInstruction;
 }
 
-export async function heliusAddPriorityFeeToTxBuilder( txBuilder : TransactionBuilder ) : Promise<void> {
+async function getLastGas(): Promise<number> {
+    const now = new Date();
+
+    // Do we have a last gas?
+    const expired = lastGasAndExpiry.expiry == null || now >= lastGasAndExpiry.expiry;
+
+    // Get from the helius
+    if (expired || lastGasAndExpiry.lastGas == null) {
+        const priorityFees = await memoizedGetPriorityFeeEstimate();
+
+        debug("We have expired. Setting last gas back");
+
+        // Set to medium
+        lastGasAndExpiry.lastGas = priorityFees.medium;
+    }
+
+    // Set the last expired
+    lastGasAndExpiry.expiry = addMinutes(now, 5);
+
+    // Return it
+    return (lastGasAndExpiry.lastGas);
+}
+
+export async function heliusIncreaseLastGas(): Promise<void> {
     // Does not apply in production
-    if( !IS_PRODUCTION )
+    if (!IS_PRODUCTION)
+        return;
+
+    // Get the last gas
+    const lastGas = await getLastGas();
+
+    // Get the maximum
+    const maximum = await memoizedGetPriorityFeeEstimate();
+
+    debug("Last gas maximum=", maximum);
+
+    // Increase by 1.2
+    lastGasAndExpiry.lastGas = Math.min(lastGas * 1.3, maximum.veryHigh);
+
+    debug("New last gas=", lastGasAndExpiry);
+}
+
+export async function heliusAddPriorityFeeToTxBuilder(txBuilder: TransactionBuilder): Promise<void> {
+    // Does not apply in production
+    if (!IS_PRODUCTION)
         return;
 
     const ix = await heliusCreateDynamicPriorityFeeInstruction();
 
     txBuilder.prependInstruction({
-        instructions : [ ix ],
-        cleanupInstructions : [],
-        signers : []
+        instructions: [ix],
+        cleanupInstructions: [],
+        signers: []
     })
 }

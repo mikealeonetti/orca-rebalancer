@@ -4,7 +4,7 @@ import { ctx } from "./solana";
 import { EMPTY_INSTRUCTION, Instruction, TransactionBuilder, resolveOrCreateATA } from "@orca-so/common-sdk";
 import { PublicKey } from "@solana/web3.js";
 import { getAssociatedTokenAddress, getAssociatedTokenAddressSync } from "@solana/spl-token";
-import { heliusAddPriorityFeeToTxBuilder } from "./heliusPriority";
+import { heliusAddPriorityFeeToTxBuilder, heliusIncreaseLastGas } from "./heliusPriority";
 import { DBWhirlpool, DBWhirlpoolHistory } from "./database";
 import Decimal from "decimal.js";
 import util from 'util';
@@ -124,13 +124,20 @@ export default async function (position: WhirlpoolPositionInfo): Promise<void> {
         .addInstruction(collect_reward_ix[1])
         .addInstruction(collect_reward_ix[2]);
 
-    // Send the transaction
-    const signature = await tx_builder.buildAndExecute( undefined, { maxRetries : MAX_RETRIES_SETTING } );
-    console.log("signature:", signature);
 
-    // Wait for the transaction to complete
-    const latest_blockhash = await ctx.connection.getLatestBlockhash();
-    await ctx.connection.confirmTransaction({ signature, ...latest_blockhash }, "confirmed");
+    try {
+        // Send the transaction
+        const signature = await tx_builder.buildAndExecute(undefined, { maxRetries: MAX_RETRIES_SETTING });
+        debug("signature:", signature);
+
+        // Wait for the transaction to complete
+        const latest_blockhash = await ctx.connection.getLatestBlockhash();
+        await ctx.connection.confirmTransaction({ signature, ...latest_blockhash }, "confirmed");
+    }
+    catch (e) {
+        await heliusIncreaseLastGas();
+        throw e;
+    }
 
     // Shorthand
     const publicKeyString = position.publicKey.toString();
