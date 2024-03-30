@@ -8,6 +8,7 @@ import { ORCA_WHIRLPOOL_PROGRAM_ID } from "@orca-so/whirlpools-sdk";
 import { addMinutes } from "date-fns";
 import Debug from 'debug';
 import { IS_PRODUCTION } from "./constants";
+import { round } from "lodash";
 
 const debug = Debug("rebalancer:heliusPriority");
 
@@ -120,7 +121,7 @@ export async function heliusIncreaseLastGas(): Promise<void> {
     debug("Last gas maximum=", maximum);
 
     // Increase by 1.2
-    lastGasAndExpiry.lastGas = Math.min(lastGas * 1.3, maximum.veryHigh);
+    lastGasAndExpiry.lastGas = round( Math.min(lastGas * 1.3, maximum.veryHigh) );
 
     debug("New last gas=", lastGasAndExpiry);
 }
