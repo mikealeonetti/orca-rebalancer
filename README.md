@@ -1,7 +1,7 @@
 # Orca Rebalancer bot
 This bot is a "dumb" bot for providing liqudiity to Orca.so (https://v1.orca.so/liquidity/browse).
 
-I call it "dumb" because it just simply rebalances based on a percentage and plops the liquidity take right in the middle of that percent.
+I call it "dumb" because it just simply rebalances based on a percentage up and down versus the current price.
 
 I also decomissioned it because there is a *huge* bug currently in Orca that improperly reports the earned fees when the price goes out of range. That was seriously tripping up my math. I was really trying to aim tracking PnL.
 
