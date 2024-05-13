@@ -462,13 +462,13 @@ export default async function (position?: WhirlpoolPositionInfo): Promise<void> 
             // Prepare the text
             const text = util.format(`Position Increased [%s]
             
-            Price: %s
-            Low price: %s (%s%% from current)
-            High price: %s (%s%% from current)
-            
-            Stake total: %s USDC
-            SOL amount: %s (%s USDC, %s%%)
-            USDC amount: %s (%s%%)`,
+Price: %s
+Low price: %s (%s%% from current)
+High price: %s (%s%% from current)
+
+Stake total: %s USDC
+SOL amount: %s (%s USDC, %s%%)
+USDC amount: %s (%s%%)`,
                 newPosition.publicKey,
 
                 newPosition.price.toFixed(4),
