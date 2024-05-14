@@ -91,3 +91,9 @@ IS_DEBUG_MODE=true
 # If you want to receive alerts on Telegram enter your Telegram bot ID and subscribe.
 TELEGRAM_BOT_TOKEN=...
 ```
+## Converting your wallet key into the JSON file for Anchor Wallet format
+I've included a utility for that. You'll find the run action "create-wallet" in the package.json file does that. You can
+```
+npm run create-walet
+```
+and it'll bring up the utility. I had to use it for myself.
